@@ -163,6 +163,19 @@ curl -X PATCH http://127.0.0.1:8317/v0/management/plugins/usage-quota-guard/api-
   }'
 ```
 
+### Delete a key
+
+Adding the same API key twice is rejected with `409 api_key_already_exists`; use edit instead. To remove a key entirely (for example to clean up duplicates left over from before the secret was persisted):
+
+```bash
+curl -X DELETE http://127.0.0.1:8317/v0/management/plugins/usage-quota-guard/api-keys \
+  -H "X-Management-Key: $CPA_MANAGEMENT_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key_hash": "hmac_..."}'
+```
+
+The key's historical usage rows are retained; only the `api_keys` entry is removed.
+
 ## Route health APIs
 
 List active route bans:
@@ -195,8 +208,8 @@ CPA serves plugin resource pages without management auth, so the page is only a 
 
 - `usage_events`: 90 days by default.
 - `monthly_usage`: retained indefinitely.
-- `route_bans`: retained as history unless manually removed in a future maintenance tool.
-- `api_keys`: retained until manually deleted in a future version.
+- `route_bans`: retained as history unless manually removed.
+- `api_keys`: retained until deleted via the management API or dashboard.
 
 ## Safety notes
 
