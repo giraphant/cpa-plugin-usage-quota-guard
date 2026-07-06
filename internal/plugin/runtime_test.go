@@ -84,6 +84,23 @@ func TestFrontendAuthActiveKey(t *testing.T) {
 	}
 }
 
+func TestFrontendAuthBypassesModelListWithoutAPIKey(t *testing.T) {
+	configureTestRuntime(t)
+	req := pluginapi.FrontendAuthRequest{Method: http.MethodGet, Path: "/v1/models"}
+	body, _ := json.Marshal(req)
+	raw, err := HandleMethod(pluginabi.MethodFrontendAuthAuthenticate, body)
+	if err != nil {
+		t.Fatalf("auth: %v", err)
+	}
+	resp := unwrap[pluginapi.FrontendAuthResponse](t, raw)
+	if !resp.Authenticated {
+		t.Fatalf("model list request was not bypassed: %+v", resp)
+	}
+	if resp.Metadata["bypass"] != "models" {
+		t.Fatalf("metadata = %+v", resp.Metadata)
+	}
+}
+
 func TestFrontendAuthRejectsPendingDisabledOverQuota(t *testing.T) {
 	st := configureTestRuntime(t)
 	now := time.Now()

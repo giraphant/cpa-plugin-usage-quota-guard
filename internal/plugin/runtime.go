@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	Version    = "0.1.1"
+	Version    = "0.1.2"
 	Identifier = "usage-quota-guard"
 )
 
@@ -120,6 +120,13 @@ func (r *Runtime) frontendAuth(request []byte) ([]byte, error) {
 	if err := json.Unmarshal(request, &req); err != nil {
 		return nil, err
 	}
+	if isModelListRequest(req.Method, req.Path) {
+		return abi.OKEnvelope(pluginapi.FrontendAuthResponse{
+			Authenticated: true,
+			Principal:     "usage-quota-guard:bypass:models",
+			Metadata:      map[string]string{"bypass": "models"},
+		})
+	}
 	rawKey, source, ok := keyauth.ExtractAPIKey(req.Headers, req.Query, cfg.FrontendAuth.AcceptedSources)
 	if !ok {
 		return abi.OKEnvelope(pluginapi.FrontendAuthResponse{Authenticated: false, Metadata: map[string]string{"reason": "missing_key"}})
@@ -199,6 +206,12 @@ func (r *Runtime) pick(request []byte) ([]byte, error) {
 		return abi.OKEnvelope(pluginapi.SchedulerPickResponse{AuthID: candidate.ID, Handled: true})
 	}
 	return abi.OKEnvelope(pluginapi.SchedulerPickResponse{Handled: false})
+}
+
+func isModelListRequest(method, path string) bool {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	path = strings.TrimRight(strings.TrimSpace(path), "/")
+	return method == http.MethodGet && (path == "/models" || path == "/v1/models" || path == "/v0/models")
 }
 
 func candidateStatusUsable(status string) bool {

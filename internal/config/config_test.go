@@ -27,6 +27,31 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsFlatDottedConfigFields(t *testing.T) {
+	raw := []byte(`
+storage.sqlite_path: /srv/cpa/usage.sqlite
+secret.secret_file: /srv/cpa/usage.secret
+usage.detail_retention_days: 30
+unknown_key_access: allow
+`)
+	cfg, err := Load(raw)
+	if err != nil {
+		t.Fatalf("Load flat dotted config: %v", err)
+	}
+	if cfg.Storage.SQLitePath != "/srv/cpa/usage.sqlite" {
+		t.Fatalf("sqlite path = %q", cfg.Storage.SQLitePath)
+	}
+	if cfg.Secret.SecretFile != "/srv/cpa/usage.secret" {
+		t.Fatalf("secret file = %q", cfg.Secret.SecretFile)
+	}
+	if cfg.Usage.DetailRetentionDays != 30 {
+		t.Fatalf("retention = %d", cfg.Usage.DetailRetentionDays)
+	}
+	if cfg.UnknownKeyAccess != "allow" {
+		t.Fatalf("unknown access = %q", cfg.UnknownKeyAccess)
+	}
+}
+
 func TestLoadOverrides(t *testing.T) {
 	raw := []byte(`
 storage:

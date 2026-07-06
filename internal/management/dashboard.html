@@ -1,8 +1,104 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Usage Quota Guard</title></head>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Usage Quota Guard</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #17202a; background: #fafafa; }
+    h1 { margin-top: 0; }
+    input, select, button { font: inherit; padding: 6px 8px; }
+    button { cursor: pointer; }
+    .card { background: white; border: 1px solid #d9e2ec; border-radius: 10px; padding: 16px; margin: 14px 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+    table { border-collapse: collapse; width: 100%; background: white; }
+    th, td { border-bottom: 1px solid #e5eaf0; padding: 8px; text-align: left; }
+    th { background: #f7f9fb; }
+    .muted { color: #6b7280; font-size: 13px; }
+    .error { color: #b42318; white-space: pre-wrap; }
+    .ok { color: #067647; }
+  </style>
+</head>
 <body>
-<h1>Usage Quota Guard</h1>
-<p>This static resource is intentionally unauthenticated by CPA. Use authenticated <code>/v0/management/plugins/usage-quota-guard/*</code> APIs for data.</p>
+  <h1>Usage Quota Guard</h1>
+  <p class="muted">这个页面本身是 CPA plugin resource；数据请求会走需要 management key 的 <code>/v0/management/plugins/usage-quota-guard/*</code> API。</p>
+
+  <div class="card">
+    <div class="row">
+      <label>Management Key <input id="management-key" type="password" placeholder="CPA management key"></label>
+      <button onclick="loadAll()">刷新</button>
+      <span id="status" class="muted"></span>
+    </div>
+    <div id="error" class="error"></div>
+  </div>
+
+  <div class="card">
+    <h2>添加下游 API key</h2>
+    <div class="row">
+      <input id="new-key" type="password" placeholder="sk-...">
+      <input id="new-name" placeholder="显示名称">
+      <input id="new-limit" type="number" min="0" placeholder="月 token 额度，空=无限">
+      <select id="new-status"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
+      <button onclick="addKey()">添加</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>下游 keys</h2>
+    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Used</th><th>Limit</th><th>Remaining</th><th>Key Hash</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Active route bans</h2>
+    <table id="bans"><thead><tr><th>Target</th><th>Reason</th><th>Provider</th><th>Model</th><th>Expires</th><th>Action</th></tr></thead><tbody></tbody></table>
+  </div>
+
+<script>
+function managementKey() { return document.getElementById('management-key').value; }
+function setStatus(text, ok = true) {
+  document.getElementById('status').textContent = text || '';
+  document.getElementById('status').className = ok ? 'ok' : 'error';
+}
+function setError(err) { document.getElementById('error').textContent = err ? String(err) : ''; }
+async function api(path, options = {}) {
+  const headers = Object.assign({'X-Management-Key': managementKey()}, options.headers || {});
+  const res = await fetch('/v0/management/plugins/usage-quota-guard/' + path, Object.assign({}, options, { headers }));
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+async function loadKeys() {
+  const keys = await api('api-keys');
+  document.querySelector('#keys tbody').innerHTML = (keys.items || []).map(k => `<tr><td>${esc(k.display_name || '')}</td><td>${esc(k.fingerprint)}</td><td>${esc(k.status)}</td><td>${k.used_tokens}</td><td>${k.monthly_token_limit ?? '∞'}</td><td>${k.remaining_tokens ?? '∞'}</td><td><code>${esc(k.key_hash)}</code></td></tr>`).join('');
+}
+async function loadBans() {
+  const bans = await api('bans?active=true');
+  document.querySelector('#bans tbody').innerHTML = (bans.items || []).map(b => `<tr><td><code>${esc(b.target_key)}</code></td><td>${esc(b.reason)}</td><td>${esc(b.provider || '')}</td><td>${esc(b.model || '')}</td><td>${esc(b.expires_at)}</td><td><button onclick="unban('${escAttr(b.target_key)}')">unban</button></td></tr>`).join('');
+}
+async function loadAll() {
+  try { setError(''); setStatus('加载中...'); await loadKeys(); await loadBans(); setStatus('已刷新'); }
+  catch (err) { setStatus('加载失败', false); setError(err); }
+}
+async function addKey() {
+  try {
+    setError('');
+    const limitText = document.getElementById('new-limit').value.trim();
+    const body = {
+      api_key: document.getElementById('new-key').value,
+      display_name: document.getElementById('new-name').value,
+      monthly_token_limit: limitText === '' ? null : Number(limitText),
+      status: document.getElementById('new-status').value
+    };
+    await api('api-keys', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    document.getElementById('new-key').value = '';
+    await loadAll();
+  } catch (err) { setStatus('添加失败', false); setError(err); }
+}
+async function unban(targetKey) {
+  try { await api('unban', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target_key: targetKey, reason: 'manual'}) }); await loadAll(); }
+  catch (err) { setStatus('解禁失败', false); setError(err); }
+}
+function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(v) { return esc(v).replace(/`/g, '&#96;'); }
+</script>
 </body>
 </html>

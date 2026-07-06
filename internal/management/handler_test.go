@@ -38,6 +38,18 @@ func TestRegisterRoutes(t *testing.T) {
 	}
 }
 
+func TestDashboardHTMLIsInteractive(t *testing.T) {
+	st, cfg := testStore(t)
+	resp := Handle(pluginapi.ManagementRequest{Method: http.MethodGet, Path: "/v0/resource/plugins/usage-quota-guard/dashboard"}, st, cfg)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	body := string(resp.Body)
+	if !strings.Contains(body, "id=\"management-key\"") || !strings.Contains(body, "loadKeys") || strings.Contains(body, "intentionally unauthenticated") {
+		t.Fatalf("dashboard is not interactive enough: %s", body)
+	}
+}
+
 func TestAddAPIKeyRedactsResponse(t *testing.T) {
 	st, cfg := testStore(t)
 	resp := Handle(pluginapi.ManagementRequest{Method: http.MethodPost, Path: prefix + "/api-keys", Body: []byte(`{"api_key":"sk-secret-value","display_name":"alice","monthly_token_limit":100,"status":"active"}`)}, st, cfg)

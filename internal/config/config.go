@@ -95,6 +95,9 @@ func Load(raw []byte) (Config, error) {
 		if err := yaml.Unmarshal(raw, &cfg); err != nil {
 			return Config{}, err
 		}
+		if err := applyFlatDottedFields(raw, &cfg); err != nil {
+			return Config{}, err
+		}
 	}
 	if cfg.Storage.SQLitePath == "" {
 		cfg.Storage.SQLitePath = "./data/usage-quota-guard.sqlite"
@@ -158,6 +161,52 @@ func defaultRouteHealthRules() []RouteHealthRule {
 	return []RouteHealthRule{
 		{Name: "codex_429", Provider: "codex", StatusCodes: []int{429}, DurationStrategy: "codex_reset_headers", FallbackDuration: Duration{5 * time.Hour}, MinDuration: Duration{5 * time.Minute}, MaxDuration: Duration{24 * time.Hour}},
 		{Name: "generic_429", StatusCodes: []int{429}, DurationStrategy: "retry_after_header", FallbackDuration: Duration{10 * time.Minute}, MinDuration: Duration{time.Minute}, MaxDuration: Duration{time.Hour}},
+	}
+}
+
+func applyFlatDottedFields(raw []byte, cfg *Config) error {
+	var fields map[string]any
+	if err := yaml.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	for key, value := range fields {
+		switch strings.TrimSpace(key) {
+		case "storage.sqlite_path":
+			if s, ok := stringValue(value); ok {
+				cfg.Storage.SQLitePath = s
+			}
+		case "secret.secret_file":
+			if s, ok := stringValue(value); ok {
+				cfg.Secret.SecretFile = s
+			}
+		case "secret.secret_env":
+			if s, ok := stringValue(value); ok {
+				cfg.Secret.SecretEnv = s
+			}
+		case "usage.detail_retention_days":
+			if n, ok := intValue(value); ok {
+				cfg.Usage.DetailRetentionDays = n
+			}
+		}
+	}
+	return nil
+}
+
+func stringValue(value any) (string, bool) {
+	s, ok := value.(string)
+	return strings.TrimSpace(s), ok
+}
+
+func intValue(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	default:
+		return 0, false
 	}
 }
 
