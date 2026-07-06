@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,6 +154,34 @@ func TestDeleteAPIKey(t *testing.T) {
 	}
 	if err := st.DeleteAPIKey(key.KeyHash); !errors.Is(err, ErrKeyNotFound) {
 		t.Fatalf("expected ErrKeyNotFound on second delete, got %v", err)
+	}
+}
+
+func TestWeeklyPeriodUsage(t *testing.T) {
+	cfg := config.Default()
+	cfg.Quota.Period = config.QuotaPeriodWeekly
+	cfg.Storage.SQLitePath = filepath.Join(t.TempDir(), "test.sqlite")
+	cfg.Secret.SecretFile = filepath.Join(t.TempDir(), "secret")
+	st, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	now := time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC) // Monday, ISO W2
+	key, err := st.AddAPIKey("sk-w", "w", nil, KeyStatusActive, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, InputTokens: 5}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	period := cfg.CurrentPeriod(now)
+	if !strings.HasPrefix(period, "2026-W") {
+		t.Fatalf("period = %q, want ISO week format", period)
+	}
+	used, err := st.MonthlyUsage(key.KeyHash, period)
+	if err != nil || used != 5 {
+		t.Fatalf("weekly used = %d err=%v", used, err)
 	}
 }
 

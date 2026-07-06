@@ -48,13 +48,13 @@ func Handle(req pluginapi.ManagementRequest, st *store.Store, cfg config.Config)
 	case req.Method == http.MethodGet && path == "/api-keys":
 		month := req.Query.Get("month")
 		if month == "" {
-			month = cfg.CurrentMonth(time.Now())
+			month = cfg.CurrentPeriod(time.Now())
 		}
 		items, err := st.ListAPIKeys(month)
 		if err != nil {
 			return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
-		return jsonResp(http.StatusOK, map[string]any{"items": items, "month": month})
+		return jsonResp(http.StatusOK, map[string]any{"items": items, "month": month, "period": month})
 	case req.Method == http.MethodPost && path == "/api-keys":
 		var body struct {
 			APIKey            string `json:"api_key"`

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"regexp"
 	"testing"
 	"time"
 )
@@ -79,10 +80,36 @@ route_health:
 	if cfg.Storage.SQLitePath != "/tmp/test.sqlite" || cfg.UnknownKeyAccess != "allow" {
 		t.Fatalf("unexpected overrides: %+v", cfg)
 	}
-	if cfg.Usage.DetailRetentionDays != 14 || cfg.CurrentMonth(time.Date(2026, 7, 6, 1, 0, 0, 0, time.UTC)) != "2026-07" {
+	if cfg.Usage.DetailRetentionDays != 14 || cfg.CurrentPeriod(time.Date(2026, 7, 6, 1, 0, 0, 0, time.UTC)) != "2026-07" {
 		t.Fatalf("unexpected usage override")
 	}
 	if got := cfg.RouteHealth.Rules[0].FallbackDuration.Duration; got != 2*time.Minute {
 		t.Fatalf("fallback duration = %s", got)
+	}
+}
+
+func TestCurrentPeriodMonthlyDefault(t *testing.T) {
+	cfg, _ := Load(nil)
+	got := cfg.CurrentPeriod(time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC))
+	if got != "2026-07" {
+		t.Fatalf("monthly period = %q, want 2026-07", got)
+	}
+}
+
+func TestCurrentPeriodWeeklyFormatAndBoundary(t *testing.T) {
+	cfg, _ := Load([]byte("quota:\n  period: weekly\n"))
+	sun := cfg.CurrentPeriod(time.Date(2026, 1, 4, 12, 0, 0, 0, time.UTC)) // Sunday, end of ISO W1
+	mon := cfg.CurrentPeriod(time.Date(2026, 1, 5, 12, 0, 0, 0, time.UTC)) // Monday, start of ISO W2
+	if !regexp.MustCompile(`^\d{4}-W\d{2}$`).MatchString(mon) {
+		t.Fatalf("weekly format = %q", mon)
+	}
+	if sun == mon {
+		t.Fatalf("ISO week should differ across Sun/Mon boundary: sun=%s mon=%s", sun, mon)
+	}
+}
+
+func TestLoadRejectsInvalidQuotaPeriod(t *testing.T) {
+	if _, err := Load([]byte("quota:\n  period: daily\n")); err == nil {
+		t.Fatalf("expected error for invalid quota.period")
 	}
 }

@@ -177,7 +177,7 @@ func (s *Store) AuthenticateKey(rawKey string, now time.Time) (AuthResult, error
 	if status != KeyStatusActive {
 		return AuthResult{Allowed: false, Reason: status, KeyHash: keyHash, Fingerprint: fp, DisplayName: displayName, Status: status}, nil
 	}
-	month := s.cfg.CurrentMonth(now)
+	month := s.cfg.CurrentPeriod(now)
 	used, err := s.MonthlyUsage(keyHash, month)
 	if err != nil {
 		return AuthResult{}, err
@@ -205,7 +205,7 @@ func (s *Store) AddAPIKey(rawKey, displayName string, limit *int64, status strin
 	if n, _ := res.RowsAffected(); n == 0 {
 		return APIKey{}, ErrKeyAlreadyExists
 	}
-	return s.GetAPIKey(keyHash, s.cfg.CurrentMonth(now))
+	return s.GetAPIKey(keyHash, s.cfg.CurrentPeriod(now))
 }
 
 func (s *Store) DeleteAPIKey(keyHash string) error {
@@ -224,7 +224,7 @@ func (s *Store) UpdateAPIKey(keyHash, displayName string, limit *int64, status s
 	if err != nil {
 		return APIKey{}, err
 	}
-	return s.GetAPIKey(keyHash, s.cfg.CurrentMonth(now))
+	return s.GetAPIKey(keyHash, s.cfg.CurrentPeriod(now))
 }
 
 func (s *Store) GetAPIKey(keyHash, month string) (APIKey, error) {
@@ -293,7 +293,7 @@ func (s *Store) RecordUsage(event UsageEvent) error {
 		event.Timestamp = time.Now()
 	}
 	if event.Month == "" {
-		event.Month = s.cfg.CurrentMonth(event.Timestamp)
+		event.Month = s.cfg.CurrentPeriod(event.Timestamp)
 	}
 	if event.TotalTokens == 0 {
 		event.TotalTokens = event.InputTokens + event.OutputTokens + event.ReasoningTokens

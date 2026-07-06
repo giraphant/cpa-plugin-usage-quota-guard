@@ -34,6 +34,7 @@
       <span id="status" class="muted"></span>
     </div>
     <div id="error" class="error"></div>
+    <p class="muted">Management key 会保存在浏览器 localStorage，下次自动填入。插件本身无法读取 CPA 的 management key（CPA 隔离设计），所以需要你填一次。</p>
   </div>
 
   <div class="card">
@@ -45,11 +46,11 @@
       <select id="new-status"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
       <button onclick="addKey()">添加</button>
     </div>
-    <p class="muted">同一个 key 只能添加一次。重复添加会被拒绝，请用列表里的「编辑」。</p>
+    <p class="muted">同一个 key 只能添加一次，重复添加会被拒绝（请用「编辑」）。限额按 <code>quota.period</code>（weekly/monthly）计算。</p>
   </div>
 
   <div class="card">
-    <h2>下游 keys</h2>
+    <h2>下游 keys <span id="period-label" class="muted"></span></h2>
     <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Used</th><th>Limit</th><th>Remaining</th><th>Key Hash</th><th>操作</th></tr></thead><tbody></tbody></table>
   </div>
 
@@ -59,7 +60,17 @@
   </div>
 
 <script>
-function managementKey() { return document.getElementById('management-key').value; }
+function managementKey() {
+  const v = document.getElementById('management-key').value;
+  try { localStorage.setItem('uqg_management_key', v); } catch (e) {}
+  return v;
+}
+window.addEventListener('DOMContentLoaded', function () {
+  try {
+    const saved = localStorage.getItem('uqg_management_key');
+    if (saved) document.getElementById('management-key').value = saved;
+  } catch (e) {}
+});
 function setStatus(text, ok = true) {
   const el = document.getElementById('status');
   el.textContent = text || '';
@@ -78,6 +89,8 @@ async function api(path, options = {}) {
 }
 async function loadKeys() {
   const keys = await api('api-keys');
+  const lbl = document.getElementById('period-label');
+  if (lbl) lbl.textContent = keys.period ? '（本期 ' + keys.period + '）' : '';
   document.querySelector('#keys tbody').innerHTML = (keys.items || []).map(k => `<tr id="row-${hashId(k.key_hash)}">
     <td>${esc(k.display_name || '')}</td>
     <td>${esc(k.fingerprint)}</td>

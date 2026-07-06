@@ -51,6 +51,9 @@ func TestDashboardHTMLIsInteractive(t *testing.T) {
 	if !strings.Contains(body, "deleteKey") || !strings.Contains(body, "editKey") {
 		t.Fatalf("dashboard missing edit/delete controls: %s", body)
 	}
+	if !strings.Contains(body, "localStorage") {
+		t.Fatalf("dashboard does not persist management key: %s", body)
+	}
 }
 
 func TestAddAPIKeyRedactsResponse(t *testing.T) {

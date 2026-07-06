@@ -24,7 +24,7 @@ func FromCPA(record pluginapi.UsageRecord, cfg config.Config) store.UsageEvent {
 		RequestID:           requestID(record),
 		KeyHash:             strings.TrimSpace(record.APIKey),
 		Timestamp:           record.RequestedAt,
-		Month:               cfg.CurrentMonth(record.RequestedAt),
+		Month:               cfg.CurrentPeriod(record.RequestedAt),
 		Provider:            strings.TrimSpace(record.Provider),
 		Model:               strings.TrimSpace(record.Model),
 		AuthID:              strings.TrimSpace(record.AuthID),

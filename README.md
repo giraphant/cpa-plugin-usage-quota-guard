@@ -9,6 +9,15 @@ It provides two guardrails in one plugin:
 
 The plugin uses only CPA's official plugin ABI. It does not patch or fork `router-for-me/CLIProxyAPI`.
 
+## Quota period
+
+`quota.period` selects the accounting window for `monthly_token_limit`:
+
+- `monthly` (default): `YYYY-MM`, e.g. `2026-07`.
+- `weekly`: ISO week `YYYY-Www`, e.g. `2026-W27` (Monday start).
+
+The limit field is still named `monthly_token_limit` for backward compatibility, but its meaning is "per configured period". Switching period does not migrate historical rows; usage already recorded under the old period key simply ages out.
+
 ## Current CPA limitation
 
 CPA's `frontend_auth_provider` API returns only `Authenticated`/`Principal`/`Metadata`. It cannot return a custom HTTP status or JSON error body. Therefore over-quota, pending, disabled, and unknown keys are rejected by returning `Authenticated: false`; CPA then controls the downstream HTTP status/body for auth failure.
@@ -19,16 +28,16 @@ The plugin still stores `quota.over_quota_status` and `quota.over_quota_message`
 
 ```bash
 go test ./...
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.3.dylib ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.4.dylib ./cmd/plugin
 ```
 
 On Linux, build a `.so` instead:
 
 ```bash
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.3.so ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.4.so ./cmd/plugin
 ```
 
-CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.3.dylib`.
+CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.4.dylib`.
 
 ## Install through CPA plugin store
 
@@ -47,7 +56,7 @@ The checked-in `dist/plugin-store/registry.json` uses CPA's `github-release` ins
 CPA will download the matching release asset named like:
 
 ```text
-usage-quota-guard_0.1.3_linux_amd64.zip
+usage-quota-guard_0.1.4_linux_amd64.zip
 ```
 
 and verify it with the release `checksums.txt` file.
@@ -55,8 +64,8 @@ and verify it with the release `checksums.txt` file.
 To publish a new version, push a tag:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 ## CPA config example
@@ -94,8 +103,9 @@ plugins:
         timezone: "Asia/Shanghai"
 
       quota:
+        period: "monthly"   # "monthly" (YYYY-MM) or "weekly" (ISO week YYYY-Www)
         over_quota_status: 429
-        over_quota_message: "Monthly token quota exceeded for this API key."
+        over_quota_message: "Token quota exceeded for this API key."
 
       route_health:
         enabled: true

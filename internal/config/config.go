@@ -12,6 +12,9 @@ import (
 const (
 	UnknownAccessDeny  = "deny"
 	UnknownAccessAllow = "allow"
+
+	QuotaPeriodMonthly = "monthly"
+	QuotaPeriodWeekly  = "weekly"
 )
 
 type Duration struct {
@@ -69,6 +72,7 @@ type UsageConfig struct {
 }
 
 type QuotaConfig struct {
+	Period           string `yaml:"period"`
 	OverQuotaStatus  int    `yaml:"over_quota_status"`
 	OverQuotaMessage string `yaml:"over_quota_message"`
 }
@@ -125,7 +129,11 @@ func Load(raw []byte) (Config, error) {
 		cfg.Quota.OverQuotaStatus = 429
 	}
 	if cfg.Quota.OverQuotaMessage == "" {
-		cfg.Quota.OverQuotaMessage = "Monthly token quota exceeded for this API key."
+		cfg.Quota.OverQuotaMessage = "Token quota exceeded for this API key."
+	}
+	cfg.Quota.Period = strings.ToLower(strings.TrimSpace(cfg.Quota.Period))
+	if cfg.Quota.Period == "" {
+		cfg.Quota.Period = QuotaPeriodMonthly
 	}
 	if cfg.RouteHealth.Mode == "" {
 		cfg.RouteHealth.Mode = "plugin_scheduler"
@@ -148,7 +156,7 @@ func Default() Config {
 		UnknownKeyRegistration: true,
 		UnknownKeyAccess:       UnknownAccessDeny,
 		Usage:                  UsageConfig{DetailRetentionDays: 90, Timezone: "Asia/Shanghai"},
-		Quota:                  QuotaConfig{OverQuotaStatus: 429, OverQuotaMessage: "Monthly token quota exceeded for this API key."},
+		Quota:                  QuotaConfig{Period: QuotaPeriodMonthly, OverQuotaStatus: 429, OverQuotaMessage: "Token quota exceeded for this API key."},
 		RouteHealth:            RouteHealth{Enabled: true, Mode: "plugin_scheduler", Rules: defaultRouteHealthRules()},
 	}
 }
@@ -220,18 +228,26 @@ func (c Config) Validate() error {
 	if c.UnknownKeyAccess != UnknownAccessDeny && c.UnknownKeyAccess != UnknownAccessAllow {
 		return fmt.Errorf("unknown_key_access must be %q or %q", UnknownAccessDeny, UnknownAccessAllow)
 	}
+	if c.Quota.Period != QuotaPeriodMonthly && c.Quota.Period != QuotaPeriodWeekly {
+		return fmt.Errorf("quota.period must be %q or %q", QuotaPeriodMonthly, QuotaPeriodWeekly)
+	}
 	if _, err := time.LoadLocation(c.Usage.Timezone); err != nil {
 		return fmt.Errorf("invalid usage.timezone: %w", err)
 	}
 	return nil
 }
 
-func (c Config) CurrentMonth(t time.Time) string {
+func (c Config) CurrentPeriod(t time.Time) string {
 	loc, err := time.LoadLocation(c.Usage.Timezone)
 	if err != nil {
 		loc = time.Local
 	}
-	return t.In(loc).Format("2006-01")
+	tt := t.In(loc)
+	if c.Quota.Period == QuotaPeriodWeekly {
+		year, week := tt.ISOWeek()
+		return fmt.Sprintf("%04d-W%02d", year, week)
+	}
+	return tt.Format("2006-01")
 }
 
 func (c Config) RetentionCutoff(now time.Time) time.Time {
