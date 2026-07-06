@@ -27,6 +27,11 @@ const (
 	KeyStatusDisabled = "disabled"
 )
 
+var (
+	ErrKeyAlreadyExists = errors.New("api key already exists")
+	ErrKeyNotFound      = errors.New("api key not found")
+)
+
 type Store struct {
 	db     *sql.DB
 	cfg    config.Config
@@ -190,14 +195,28 @@ func (s *Store) AddAPIKey(rawKey, displayName string, limit *int64, status strin
 	}
 	keyHash := s.HashKey(rawKey)
 	fp := keyauth.Fingerprint(rawKey)
-	_, err := s.db.Exec(`INSERT INTO api_keys(key_hash, fingerprint, display_name, monthly_token_limit, status, first_seen_at, last_seen_at, created_at, updated_at)
+	res, err := s.db.Exec(`INSERT INTO api_keys(key_hash, fingerprint, display_name, monthly_token_limit, status, first_seen_at, last_seen_at, created_at, updated_at)
 		VALUES(?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(key_hash) DO UPDATE SET display_name=excluded.display_name, monthly_token_limit=excluded.monthly_token_limit, status=excluded.status, updated_at=excluded.updated_at`,
+		ON CONFLICT(key_hash) DO NOTHING`,
 		keyHash, fp, displayName, limit, status, ts(now), ts(now), ts(now), ts(now))
 	if err != nil {
 		return APIKey{}, err
 	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return APIKey{}, ErrKeyAlreadyExists
+	}
 	return s.GetAPIKey(keyHash, s.cfg.CurrentMonth(now))
+}
+
+func (s *Store) DeleteAPIKey(keyHash string) error {
+	res, err := s.db.Exec(`DELETE FROM api_keys WHERE key_hash = ?`, keyHash)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrKeyNotFound
+	}
+	return nil
 }
 
 func (s *Store) UpdateAPIKey(keyHash, displayName string, limit *int64, status string, now time.Time) (APIKey, error) {

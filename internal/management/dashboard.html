@@ -9,19 +9,23 @@
     h1 { margin-top: 0; }
     input, select, button { font: inherit; padding: 6px 8px; }
     button { cursor: pointer; }
+    button.danger { color: #b42318; }
     .card { background: white; border: 1px solid #d9e2ec; border-radius: 10px; padding: 16px; margin: 14px 0; }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
     table { border-collapse: collapse; width: 100%; background: white; }
-    th, td { border-bottom: 1px solid #e5eaf0; padding: 8px; text-align: left; }
+    th, td { border-bottom: 1px solid #e5eaf0; padding: 8px; text-align: left; vertical-align: top; }
     th { background: #f7f9fb; }
     .muted { color: #6b7280; font-size: 13px; }
     .error { color: #b42318; white-space: pre-wrap; }
     .ok { color: #067647; }
+    .warn { color: #b54708; font-weight: 600; }
+    code { background: #eef2f6; padding: 1px 4px; border-radius: 3px; }
+    .inline-form input { margin: 2px; }
   </style>
 </head>
 <body>
   <h1>Usage Quota Guard</h1>
-  <p class="muted">这个页面本身是 CPA plugin resource；数据请求会走需要 management key 的 <code>/v0/management/plugins/usage-quota-guard/*</code> API。</p>
+  <p class="muted">这个页面本身是 CPA plugin resource；数据请求走需要 management key 的 <code>/v0/management/plugins/usage-quota-guard/*</code> API。</p>
 
   <div class="card">
     <div class="row">
@@ -41,11 +45,12 @@
       <select id="new-status"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
       <button onclick="addKey()">添加</button>
     </div>
+    <p class="muted">同一个 key 只能添加一次。重复添加会被拒绝，请用列表里的「编辑」。</p>
   </div>
 
   <div class="card">
     <h2>下游 keys</h2>
-    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Used</th><th>Limit</th><th>Remaining</th><th>Key Hash</th></tr></thead><tbody></tbody></table>
+    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Used</th><th>Limit</th><th>Remaining</th><th>Key Hash</th><th>操作</th></tr></thead><tbody></tbody></table>
   </div>
 
   <div class="card">
@@ -56,19 +61,35 @@
 <script>
 function managementKey() { return document.getElementById('management-key').value; }
 function setStatus(text, ok = true) {
-  document.getElementById('status').textContent = text || '';
-  document.getElementById('status').className = ok ? 'ok' : 'error';
+  const el = document.getElementById('status');
+  el.textContent = text || '';
+  el.className = ok ? 'ok' : 'warn';
 }
 function setError(err) { document.getElementById('error').textContent = err ? String(err) : ''; }
 async function api(path, options = {}) {
   const headers = Object.assign({'X-Management-Key': managementKey()}, options.headers || {});
   const res = await fetch('/v0/management/plugins/usage-quota-guard/' + path, Object.assign({}, options, { headers }));
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    let detail = '';
+    try { const j = await res.json(); detail = j.message || j.error || ''; } catch (e) { detail = await res.text(); }
+    const e = new Error(detail || ('HTTP ' + res.status)); e.status = res.status; throw e;
+  }
   return await res.json();
 }
 async function loadKeys() {
   const keys = await api('api-keys');
-  document.querySelector('#keys tbody').innerHTML = (keys.items || []).map(k => `<tr><td>${esc(k.display_name || '')}</td><td>${esc(k.fingerprint)}</td><td>${esc(k.status)}</td><td>${k.used_tokens}</td><td>${k.monthly_token_limit ?? '∞'}</td><td>${k.remaining_tokens ?? '∞'}</td><td><code>${esc(k.key_hash)}</code></td></tr>`).join('');
+  document.querySelector('#keys tbody').innerHTML = (keys.items || []).map(k => `<tr id="row-${hashId(k.key_hash)}">
+    <td>${esc(k.display_name || '')}</td>
+    <td>${esc(k.fingerprint)}</td>
+    <td>${esc(k.status)}</td>
+    <td>${k.used_tokens}</td>
+    <td>${k.monthly_token_limit ?? '∞'}</td>
+    <td>${k.remaining_tokens ?? '∞'}</td>
+    <td><code>${esc(k.key_hash)}</code></td>
+    <td>
+      <button onclick="editKey('${escAttr(k.key_hash)}','${escAttr(k.display_name||'')}',${k.monthly_token_limit ?? 'null'},'${escAttr(k.status)}')">编辑</button>
+      <button class="danger" onclick="deleteKey('${escAttr(k.key_hash)}')">删除</button>
+    </td></tr>`).join('');
 }
 async function loadBans() {
   const bans = await api('bans?active=true');
@@ -91,7 +112,45 @@ async function addKey() {
     await api('api-keys', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
     document.getElementById('new-key').value = '';
     await loadAll();
-  } catch (err) { setStatus('添加失败', false); setError(err); }
+  } catch (err) {
+    if (err && err.status === 409) { setStatus('该 key 已存在', false); setError(err.message); }
+    else { setStatus('添加失败', false); setError(err); }
+  }
+}
+function editKey(keyHash, name, limit, status) {
+  const tr = document.getElementById('row-' + hashId(keyHash));
+  if (!tr) return;
+  const lim = limit === null ? '' : limit;
+  tr.innerHTML = `<td colspan="8" class="inline-form">
+    <input id="ed-name-${hashId(keyHash)}" value="${escAttr(name)}" placeholder="显示名称">
+    <input id="ed-limit-${hashId(keyHash)}" type="number" min="0" value="${lim}" placeholder="额度，空=无限">
+    <select id="ed-status-${hashId(keyHash)}"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
+    <button onclick="saveEdit('${escAttr(keyHash)}')">保存</button>
+    <button onclick="loadKeys()">取消</button>
+  </td>`;
+  document.getElementById('ed-status-' + hashId(keyHash)).value = status || 'active';
+}
+async function saveEdit(keyHash) {
+  try {
+    setError('');
+    const limText = document.getElementById('ed-limit-' + hashId(keyHash)).value.trim();
+    const body = {
+      key_hash: keyHash,
+      display_name: document.getElementById('ed-name-' + hashId(keyHash)).value,
+      monthly_token_limit: limText === '' ? null : Number(limText),
+      status: document.getElementById('ed-status-' + hashId(keyHash)).value
+    };
+    await api('api-keys', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    await loadAll();
+  } catch (err) { setStatus('保存失败', false); setError(err); }
+}
+async function deleteKey(keyHash) {
+  if (!confirm('确认删除这个 key？该 key 的历史用量记录会保留，但 key 本身无法再鉴权。')) return;
+  try {
+    setError('');
+    await api('api-keys', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key_hash: keyHash}) });
+    await loadAll();
+  } catch (err) { setStatus('删除失败', false); setError(err); }
 }
 async function unban(targetKey) {
   try { await api('unban', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target_key: targetKey, reason: 'manual'}) }); await loadAll(); }
@@ -99,6 +158,7 @@ async function unban(targetKey) {
 }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escAttr(v) { return esc(v).replace(/`/g, '&#96;'); }
+function hashId(h) { return String(h || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24); }
 </script>
 </body>
 </html>

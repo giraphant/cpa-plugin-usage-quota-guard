@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -125,7 +126,38 @@ func TestRouteBanLifecycle(t *testing.T) {
 	}
 }
 
+func TestAddAPIKeyRejectsDuplicate(t *testing.T) {
+	st := testStore(t)
+	now := time.Now()
+	if _, err := st.AddAPIKey("sk-dup", "alice", nil, KeyStatusActive, now); err != nil {
+		t.Fatalf("first add: %v", err)
+	}
+	_, err := st.AddAPIKey("sk-dup", "alice-2", nil, KeyStatusActive, now)
+	if !errors.Is(err, ErrKeyAlreadyExists) {
+		t.Fatalf("expected ErrKeyAlreadyExists, got %v", err)
+	}
+}
+
+func TestDeleteAPIKey(t *testing.T) {
+	st := testStore(t)
+	now := time.Now()
+	key, err := st.AddAPIKey("sk-del", "bob", nil, KeyStatusActive, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteAPIKey(key.KeyHash); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := st.GetAPIKey(key.KeyHash, "2026-07"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows after delete, got %v", err)
+	}
+	if err := st.DeleteAPIKey(key.KeyHash); !errors.Is(err, ErrKeyNotFound) {
+		t.Fatalf("expected ErrKeyNotFound on second delete, got %v", err)
+	}
+}
+
 func TestOpenDBForInMemory(t *testing.T) {
+
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)

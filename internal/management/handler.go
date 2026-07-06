@@ -3,6 +3,7 @@ package management
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ func Register() pluginapi.ManagementRegistrationResponse {
 			{Method: http.MethodGet, Path: "/plugins/usage-quota-guard/api-keys"},
 			{Method: http.MethodPost, Path: "/plugins/usage-quota-guard/api-keys"},
 			{Method: http.MethodPatch, Path: "/plugins/usage-quota-guard/api-keys"},
+			{Method: http.MethodDelete, Path: "/plugins/usage-quota-guard/api-keys"},
 			{Method: http.MethodGet, Path: "/plugins/usage-quota-guard/bans"},
 			{Method: http.MethodPost, Path: "/plugins/usage-quota-guard/unban"},
 		},
@@ -68,6 +70,9 @@ func Handle(req pluginapi.ManagementRequest, st *store.Store, cfg config.Config)
 		}
 		item, err := st.AddAPIKey(body.APIKey, body.DisplayName, body.MonthlyTokenLimit, body.Status, time.Now())
 		if err != nil {
+			if errors.Is(err, store.ErrKeyAlreadyExists) {
+				return jsonResp(http.StatusConflict, map[string]any{"error": "api_key_already_exists", "message": "This API key already exists. Use edit instead of adding it again."})
+			}
 			return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
 		return jsonResp(http.StatusOK, item)
@@ -89,6 +94,23 @@ func Handle(req pluginapi.ManagementRequest, st *store.Store, cfg config.Config)
 			return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
 		return jsonResp(http.StatusOK, item)
+	case req.Method == http.MethodDelete && path == "/api-keys":
+		var body struct {
+			KeyHash string `json:"key_hash"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return jsonResp(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
+		}
+		if strings.TrimSpace(body.KeyHash) == "" {
+			return jsonResp(http.StatusBadRequest, map[string]any{"error": "key_hash is required"})
+		}
+		if err := st.DeleteAPIKey(body.KeyHash); err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) {
+				return jsonResp(http.StatusNotFound, map[string]any{"error": "api_key_not_found", "message": "This API key no longer exists."})
+			}
+			return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+		return jsonResp(http.StatusOK, map[string]any{"ok": true})
 	case req.Method == http.MethodGet && path == "/bans":
 		active := req.Query.Get("active") == "true" || req.Query.Get("active") == "1"
 		items, err := st.ListRouteBans(active, time.Now())

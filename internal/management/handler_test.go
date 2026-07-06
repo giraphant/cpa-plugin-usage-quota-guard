@@ -48,6 +48,9 @@ func TestDashboardHTMLIsInteractive(t *testing.T) {
 	if !strings.Contains(body, "id=\"management-key\"") || !strings.Contains(body, "loadKeys") || strings.Contains(body, "intentionally unauthenticated") {
 		t.Fatalf("dashboard is not interactive enough: %s", body)
 	}
+	if !strings.Contains(body, "deleteKey") || !strings.Contains(body, "editKey") {
+		t.Fatalf("dashboard missing edit/delete controls: %s", body)
+	}
 }
 
 func TestAddAPIKeyRedactsResponse(t *testing.T) {
@@ -87,7 +90,37 @@ func TestPatchAPIKey(t *testing.T) {
 	}
 }
 
+func TestAddDuplicateAPIKeyReturns409(t *testing.T) {
+	st, cfg := testStore(t)
+	body := []byte(`{"api_key":"sk-dup","display_name":"alice","status":"active"}`)
+	if resp := Handle(pluginapi.ManagementRequest{Method: http.MethodPost, Path: prefix + "/api-keys", Body: body}, st, cfg); resp.StatusCode != http.StatusOK {
+		t.Fatalf("first add status = %d body=%s", resp.StatusCode, string(resp.Body))
+	}
+	resp := Handle(pluginapi.ManagementRequest{Method: http.MethodPost, Path: prefix + "/api-keys", Body: body}, st, cfg)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("duplicate add status = %d body=%s, want 409", resp.StatusCode, string(resp.Body))
+	}
+}
+
+func TestDeleteAPIKeyRoute(t *testing.T) {
+	st, cfg := testStore(t)
+	item, err := st.AddAPIKey("sk-del", "bob", nil, store.KeyStatusActive, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]string{"key_hash": item.KeyHash})
+	resp := Handle(pluginapi.ManagementRequest{Method: http.MethodDelete, Path: prefix + "/api-keys", Body: body}, st, cfg)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", resp.StatusCode, string(resp.Body))
+	}
+	list := Handle(pluginapi.ManagementRequest{Method: http.MethodGet, Path: prefix + "/api-keys"}, st, cfg)
+	if strings.Contains(string(list.Body), item.KeyHash) {
+		t.Fatalf("deleted key still listed: %s", string(list.Body))
+	}
+}
+
 func TestBanListAndUnban(t *testing.T) {
+
 	st, cfg := testStore(t)
 	now := time.Now()
 	ban := store.RouteBan{TargetKey: "auth:a:model:gpt", Reason: "test", BannedAt: now, ExpiresAt: now.Add(time.Hour)}
