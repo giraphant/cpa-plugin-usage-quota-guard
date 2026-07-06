@@ -19,16 +19,16 @@ The plugin still stores `quota.over_quota_status` and `quota.over_quota_message`
 
 ```bash
 go test ./...
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.0.dylib ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.1.dylib ./cmd/plugin
 ```
 
 On Linux, build a `.so` instead:
 
 ```bash
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.0.so ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.1.so ./cmd/plugin
 ```
 
-CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.0.dylib`.
+CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.1.dylib`.
 
 ## Install through CPA plugin store
 
@@ -47,7 +47,7 @@ The checked-in `dist/plugin-store/registry.json` uses CPA's `github-release` ins
 CPA will download the matching release asset named like:
 
 ```text
-usage-quota-guard_0.1.0_linux_amd64.zip
+usage-quota-guard_0.1.1_linux_amd64.zip
 ```
 
 and verify it with the release `checksums.txt` file.
@@ -55,8 +55,8 @@ and verify it with the release `checksums.txt` file.
 To publish a new version, push a tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 ## CPA config example

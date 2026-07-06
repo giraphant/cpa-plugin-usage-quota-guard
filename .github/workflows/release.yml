@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          LIB="usage-quota-guard-v${VERSION}.${{ matrix.ext }}"
+          LIB="usage-quota-guard.${{ matrix.ext }}"
           ZIP="usage-quota-guard_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
           go build -buildmode=c-shared -o "$LIB" ./cmd/plugin
           zip -q "$ZIP" "$LIB"
