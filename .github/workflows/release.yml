@@ -1,0 +1,86 @@
+name: Release CPA plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            ext: so
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+            ext: so
+          - goos: darwin
+            goarch: arm64
+            runner: macos-15
+            ext: dylib
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build shared library
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          LIB="usage-quota-guard-v${VERSION}.${{ matrix.ext }}"
+          ZIP="usage-quota-guard_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip"
+          go build -buildmode=c-shared -o "$LIB" ./cmd/plugin
+          zip -q "$ZIP" "$LIB"
+          shasum -a 256 "$ZIP" > "$ZIP.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: usage-quota-guard-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            usage-quota-guard_*.zip
+            usage-quota-guard_*.zip.sha256
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create checksums.txt
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          sha256sum usage-quota-guard_*.zip > checksums.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/usage-quota-guard_*.zip
+            release-artifacts/checksums.txt
+          generate_release_notes: true

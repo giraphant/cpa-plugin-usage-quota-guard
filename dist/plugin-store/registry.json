@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "plugins": [
+    {
+      "id": "usage-quota-guard",
+      "name": "Usage Quota Guard",
+      "description": "Downstream API key usage quotas and scheduler-level route health guard for CLIProxyAPI.",
+      "author": "giraphant",
+      "version": "0.1.0",
+      "repository": "https://github.com/giraphant/cpa-plugin-usage-quota-guard",
+      "homepage": "https://github.com/giraphant/cpa-plugin-usage-quota-guard",
+      "license": "MIT",
+      "tags": ["usage", "quota", "scheduler", "429", "codex"],
+      "install": {
+        "type": "github-release"
+      }
+    }
+  ]
+}

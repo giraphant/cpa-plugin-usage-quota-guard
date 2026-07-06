@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Usage Quota Guard</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; color: #17202a; }
+    code, input, button { font: inherit; }
+    .card { border: 1px solid #d9e2ec; border-radius: 10px; padding: 1rem; margin: 1rem 0; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #e5eaf0; padding: .5rem; text-align: left; }
+    th { background: #f7f9fb; }
+    .muted { color: #6b7280; }
+  </style>
+</head>
+<body>
+  <h1>Usage Quota Guard</h1>
+  <p class="muted">Static plugin resource. Data requests use authenticated <code>/v0/management/plugins/usage-quota-guard/*</code> APIs.</p>
+
+  <div class="card">
+    <label>Management key <input id="key" type="password" placeholder="CPA management key"></label>
+    <button onclick="loadAll()">Load</button>
+  </div>
+
+  <div class="card">
+    <h2>Downstream keys</h2>
+    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Used</th><th>Limit</th><th>Remaining</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Active route bans</h2>
+    <table id="bans"><thead><tr><th>Target</th><th>Reason</th><th>Provider</th><th>Model</th><th>Expires</th></tr></thead><tbody></tbody></table>
+  </div>
+
+<script>
+async function api(path) {
+  const key = document.getElementById('key').value;
+  const res = await fetch('/v0/management/plugins/usage-quota-guard/' + path, { headers: { 'X-Management-Key': key } });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+async function loadAll() {
+  const keys = await api('api-keys');
+  document.querySelector('#keys tbody').innerHTML = keys.items.map(k => `<tr><td>${esc(k.display_name || '')}</td><td>${esc(k.fingerprint)}</td><td>${esc(k.status)}</td><td>${k.used_tokens}</td><td>${k.monthly_token_limit ?? '∞'}</td><td>${k.remaining_tokens ?? '∞'}</td></tr>`).join('');
+  const bans = await api('bans?active=true');
+  document.querySelector('#bans tbody').innerHTML = bans.items.map(b => `<tr><td>${esc(b.target_key)}</td><td>${esc(b.reason)}</td><td>${esc(b.provider || '')}</td><td>${esc(b.model || '')}</td><td>${esc(b.expires_at)}</td></tr>`).join('');
+}
+function esc(v) { return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

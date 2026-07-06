@@ -1,0 +1,15 @@
+# Local CPA plugin runtime data
+/data/
+internal/plugin/data/
+*.sqlite
+*.sqlite-*
+*.secret
+
+# Generated dynamic-library build sidecars
+*.h
+*.dylib
+*.so
+*.dll
+
+# Local Playwright/MCP artifacts
+.playwright-mcp/
