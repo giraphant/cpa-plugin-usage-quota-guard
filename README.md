@@ -37,16 +37,16 @@ The plugin still stores `quota.over_quota_status` and `quota.over_quota_message`
 
 ```bash
 go test ./...
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.5.dylib ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.6.dylib ./cmd/plugin
 ```
 
 On Linux, build a `.so` instead:
 
 ```bash
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.5.so ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.6.so ./cmd/plugin
 ```
 
-CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.5.dylib`.
+CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.6.dylib`.
 
 ## Install through CPA plugin store
 
@@ -65,7 +65,7 @@ The checked-in `dist/plugin-store/registry.json` uses CPA's `github-release` ins
 CPA will download the matching release asset named like:
 
 ```text
-usage-quota-guard_0.1.5_linux_amd64.zip
+usage-quota-guard_0.1.6_linux_amd64.zip
 ```
 
 and verify it with the release `checksums.txt` file.
@@ -73,8 +73,8 @@ and verify it with the release `checksums.txt` file.
 To publish a new version, push a tag:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 ## CPA config example
@@ -223,6 +223,8 @@ The plugin registers a static resource page at:
 ```
 
 CPA serves plugin resource pages without management auth, so the page is only a shell. It fetches data from authenticated `/v0/management/plugins/usage-quota-guard/*` APIs.
+
+The dashboard is a zero-dependency embedded console with summary cards, search/status filters, quota usage bars, side-drawer editing, copy helpers, empty/loading states, and active route-ban controls.
 
 ## Data retention
 

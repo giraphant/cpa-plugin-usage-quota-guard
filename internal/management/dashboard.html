@@ -4,178 +4,896 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Usage Quota Guard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232563eb'/%3E%3Cpath d='M18 34l9 9 19-23' fill='none' stroke='white' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #17202a; background: #fafafa; }
-    h1 { margin-top: 0; }
-    input, select, button { font: inherit; padding: 6px 8px; }
-    button { cursor: pointer; }
-    button.danger { color: #b42318; }
-    .card { background: white; border: 1px solid #d9e2ec; border-radius: 10px; padding: 16px; margin: 14px 0; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
-    table { border-collapse: collapse; width: 100%; background: white; }
-    th, td { border-bottom: 1px solid #e5eaf0; padding: 8px; text-align: left; vertical-align: top; }
-    th { background: #f7f9fb; }
-    .muted { color: #6b7280; font-size: 13px; }
-    .error { color: #b42318; white-space: pre-wrap; }
-    .ok { color: #067647; }
-    .warn { color: #b54708; font-weight: 600; }
-    code { background: #eef2f6; padding: 1px 4px; border-radius: 3px; }
-    .inline-form input { margin: 2px; }
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --line: #dbe3ef;
+      --line-strong: #c8d3e1;
+      --text: #111827;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+      --primary: #2563eb;
+      --primary-strong: #1d4ed8;
+      --primary-soft: #dbeafe;
+      --green: #067647;
+      --green-soft: #dcfce7;
+      --amber: #b45309;
+      --amber-soft: #fef3c7;
+      --red: #b42318;
+      --red-soft: #fee2e2;
+      --shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.13), transparent 34rem),
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 30rem),
+        var(--bg);
+    }
+
+    button, input, select { font: inherit; max-width: 100%; }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 9px 14px;
+      cursor: pointer;
+      color: #0f172a;
+      background: #e2e8f0;
+      transition: transform 120ms ease, background 120ms ease, color 120ms ease, opacity 120ms ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { cursor: not-allowed; opacity: 0.55; transform: none; }
+    button.primary { background: var(--primary); color: white; box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24); }
+    button.primary:hover { background: var(--primary-strong); }
+    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    button.danger { background: var(--red-soft); color: var(--red); }
+    button.icon { width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; }
+    button.link { padding: 0; color: var(--primary); background: transparent; border-radius: 6px; }
+
+    input, select {
+      width: 100%;
+      min-width: 0;
+      min-height: 40px;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      padding: 8px 11px;
+      color: var(--text);
+      background: white;
+      outline: none;
+      transition: border 120ms ease, box-shadow 120ms ease;
+    }
+    input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    input[type="password"] { letter-spacing: 0.03em; }
+    label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+    code { border-radius: 8px; padding: 2px 6px; background: #eef2f7; color: #334155; font-size: 12px; }
+
+    .app { width: min(1440px, calc(100vw - 32px)); margin: 0 auto; padding: 26px 0 44px; }
+    .hero {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: 1.2fr minmax(360px, 0.8fr);
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+    .hero-main, .card, .drawer-panel {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(219, 227, 239, 0.9);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .hero-main { padding: 24px; overflow: hidden; position: relative; }
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      right: -80px;
+      top: -100px;
+      width: 240px;
+      height: 240px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(14, 165, 233, 0.04));
+    }
+    .eyebrow { margin: 0 0 10px; color: var(--primary); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); line-height: 1.05; letter-spacing: -0.04em; }
+    h2 { margin: 0; font-size: 19px; letter-spacing: -0.02em; }
+    h3 { margin: 0; font-size: 15px; }
+    p { margin: 0; }
+    .muted { color: var(--muted); }
+    .small { font-size: 12px; }
+    .hero-copy { max-width: 740px; margin-top: 12px; color: var(--muted); line-height: 1.7; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; align-items: center; }
+
+    .key-panel { padding: 18px; display: grid; gap: 14px; }
+    .key-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: end; }
+    .key-help { padding: 12px; border-radius: 14px; background: var(--panel-soft); color: var(--muted); line-height: 1.55; }
+    .status-line { display: flex; gap: 8px; align-items: center; color: var(--muted); min-height: 22px; }
+    .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--muted-2); box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.18); }
+    .dot.ok { background: var(--green); box-shadow: 0 0 0 4px rgba(6, 118, 71, 0.16); }
+    .dot.warn { background: var(--amber); box-shadow: 0 0 0 4px rgba(180, 83, 9, 0.16); }
+    .dot.err { background: var(--red); box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.16); }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+    .summary-card { padding: 16px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04); }
+    .summary-label { display: flex; justify-content: space-between; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+    .summary-value { margin-top: 10px; font-size: 30px; font-weight: 800; letter-spacing: -0.04em; }
+    .summary-note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .card { padding: 18px; }
+    .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+    .card-title { display: grid; gap: 6px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .toolbar .grow { flex: 1 1 260px; min-width: 220px; }
+    .add-form { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(140px, 1fr) minmax(150px, 0.8fr) minmax(130px, 0.6fr) auto; gap: 10px; align-items: end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+    .table-wrap { width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: white; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 980px; }
+    th, td { padding: 13px 14px; text-align: left; vertical-align: middle; border-bottom: 1px solid #eef2f7; }
+    th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: #475569; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr { transition: background 120ms ease; }
+    tbody tr:hover { background: #f8fbff; }
+    .name-cell { display: grid; gap: 5px; min-width: 180px; }
+    .name-line { display: flex; gap: 8px; align-items: center; font-weight: 700; }
+    .hash-line { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+    .pill.active { color: var(--green); background: var(--green-soft); }
+    .pill.pending { color: var(--amber); background: var(--amber-soft); }
+    .pill.disabled, .pill.over { color: var(--red); background: var(--red-soft); }
+    .usage-cell { min-width: 220px; }
+    .usage-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+    .usage-number { font-weight: 800; }
+    .usage-limit { color: var(--muted); font-size: 12px; }
+    .usage-bar { height: 10px; border-radius: 999px; overflow: hidden; background: #e2e8f0; }
+    .usage-fill { height: 100%; min-width: 0; border-radius: inherit; background: linear-gradient(90deg, #38bdf8, var(--primary)); transition: width 180ms ease; }
+    .usage-fill.warn { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .usage-fill.over { background: linear-gradient(90deg, #ef4444, #b91c1c); }
+    .usage-breakdown { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .empty-state { padding: 34px; text-align: center; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 16px; background: #fbfdff; }
+    .danger-zone { color: var(--red); }
+
+    .loading-cover {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      background: rgba(245, 247, 251, 0.45);
+    }
+    body.loading .loading-cover { display: block; }
+    .spinner {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 21;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      color: var(--muted);
+    }
+    body.loading .spinner { display: flex; }
+    .spin-dot { width: 16px; height: 16px; border: 3px solid #bfdbfe; border-top-color: var(--primary); border-radius: 999px; animation: spin 800ms linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      z-index: 50;
+      transform: translate(-50%, 16px);
+      max-width: min(620px, calc(100vw - 32px));
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: #0f172a;
+      color: white;
+      opacity: 0;
+      pointer-events: none;
+      box-shadow: var(--shadow);
+      transition: opacity 160ms ease, transform 160ms ease;
+      white-space: pre-wrap;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast.warn { background: #92400e; }
+    .toast.err { background: #991b1b; }
+    .toast.ok { background: #065f46; }
+
+    .drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: none;
+    }
+    .drawer.open { display: block; }
+    .drawer-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.36); }
+    .drawer-panel {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      bottom: 14px;
+      width: min(520px, calc(100vw - 28px));
+      max-width: calc(100vw - 28px);
+      min-width: 0;
+      padding: 20px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 18px;
+      overflow: auto;
+    }
+    .drawer-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .drawer-body { display: grid; align-content: start; gap: 14px; min-width: 0; }
+    .drawer-footer { display: flex; justify-content: space-between; gap: 10px; align-items: center; border-top: 1px solid var(--line); padding-top: 14px; min-width: 0; }
+    .field-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-width: 0; }
+    .full { grid-column: 1 / -1; }
+    .callout { padding: 12px; border-radius: 14px; background: var(--panel-soft); color: var(--muted); line-height: 1.55; min-width: 0; }
+    #edit-hash-preview { display: block; width: 100%; max-width: 100%; margin: 6px 0; overflow-wrap: anywhere; white-space: normal; }
+
+    @media (max-width: 980px) {
+      .hero { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .add-form { grid-template-columns: 1fr 1fr; }
+      .add-form button { grid-column: 1 / -1; }
+    }
+    @media (max-width: 640px) {
+      .app { width: min(100vw - 18px, 1440px); padding-top: 12px; }
+      .hero-main, .card, .key-panel { padding: 14px; border-radius: 15px; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .key-row, .add-form, .field-grid { grid-template-columns: 1fr; }
+      .toolbar { display: grid; grid-template-columns: 1fr; }
+      .toolbar .grow { min-width: 0; }
+    }
   </style>
 </head>
 <body>
-  <h1>Usage Quota Guard</h1>
-  <p class="muted">这个页面本身是 CPA plugin resource；数据请求走需要 management key 的 <code>/v0/management/plugins/usage-quota-guard/*</code> API。</p>
+  <div class="loading-cover" aria-hidden="true"></div>
+  <div class="spinner" id="loading-indicator"><span class="spin-dot"></span><span>正在刷新数据…</span></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <div class="card">
-    <div class="row">
-      <label>Management Key <input id="management-key" type="password" placeholder="CPA management key"></label>
-      <button onclick="loadAll()">刷新</button>
-      <span id="status" class="muted"></span>
-    </div>
-    <div id="error" class="error"></div>
-    <p class="muted">Management key 会保存在浏览器 localStorage，下次自动填入。插件本身无法读取 CPA 的 management key（CPA 隔离设计），所以需要你填一次。</p>
-  </div>
+  <main class="app">
+    <section class="hero">
+      <div class="hero-main">
+        <p class="eyebrow">CPA Plugin Console</p>
+        <h1>Usage Quota Guard</h1>
+        <p class="hero-copy">管理下游 API key、查看本期 input/cached/output 用量、调整额度和状态，并快速解除上游 route ban。页面不依赖外部 CDN，适合 Docker/Coolify 内网部署。</p>
+        <div class="hero-actions">
+          <button id="refresh-btn" class="primary">刷新全部</button>
+          <button id="clear-filters-btn" class="ghost">清空筛选</button>
+          <span id="status" class="status-line"><span id="status-dot" class="dot"></span><span id="status-text">等待连接</span></span>
+        </div>
+      </div>
 
-  <div class="card">
-    <h2>添加下游 API key</h2>
-    <div class="row">
-      <input id="new-key" type="password" placeholder="sk-...">
-      <input id="new-name" placeholder="显示名称">
-      <input id="new-limit" type="number" min="0" placeholder="月 token 额度，空=无限">
-      <select id="new-status"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
-      <button onclick="addKey()">添加</button>
-    </div>
-    <p class="muted">同一个 key 只能添加一次，重复添加会被拒绝（请用「编辑」）。限额按 <code>quota.period</code>（weekly/monthly）计算。</p>
-  </div>
+      <form id="management-key-form" class="key-panel hero-main" aria-label="Management key">
+        <div class="card-title">
+          <h2>Management Key</h2>
+          <p class="muted small">CPA resource 页面本身无鉴权；所有数据请求都走 management API，所以这里需要填一次。</p>
+        </div>
+        <div class="key-row">
+          <label>CPA management key
+            <input id="management-key" type="password" autocomplete="off" placeholder="粘贴 CPA management key">
+          </label>
+          <button id="toggle-key-btn" class="ghost" type="button">显示</button>
+          <button id="forget-key-btn" class="ghost" type="button">忘记</button>
+        </div>
+        <div class="key-help small">Key 只保存在当前浏览器的 <code>localStorage</code>。插件因为 CPA 隔离设计无法读取管理密钥，所以不能真正自动填充。</div>
+      </form>
+    </section>
 
-  <div class="card">
-    <h2>下游 keys <span id="period-label" class="muted"></span></h2>
-    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Input</th><th>Cached</th><th>Output</th><th id="th-limit">Limit</th><th>Remaining</th><th>Key Hash</th><th>操作</th></tr></thead><tbody></tbody></table>
-  </div>
+    <section class="summary-grid" aria-label="Usage summary">
+      <article class="summary-card">
+        <div class="summary-label"><span>下游 keys</span><span id="summary-period" class="pill">—</span></div>
+        <div id="summary-total" class="summary-value">0</div>
+        <div id="summary-total-note" class="summary-note">等待加载</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label"><span>Active</span><span class="pill active">可用</span></div>
+        <div id="summary-active" class="summary-value">0</div>
+        <div id="summary-active-note" class="summary-note">pending / disabled 会被拒绝</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label"><span>本期输出</span><span id="summary-metric" class="pill">output_tokens</span></div>
+        <div id="summary-output" class="summary-value">0</div>
+        <div id="summary-output-note" class="summary-note">Dashboard 仍显示 Input / Cached / Output 拆分</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label"><span>需要关注</span><span class="pill pending">Risk</span></div>
+        <div id="summary-risk" class="summary-value">0</div>
+        <div id="summary-risk-note" class="summary-note">超额、接近额度或 active route ban</div>
+      </article>
+    </section>
 
-  <div class="card">
-    <h2>Active route bans</h2>
-    <table id="bans"><thead><tr><th>Target</th><th>Reason</th><th>Provider</th><th>Model</th><th>Expires</th><th>Action</th></tr></thead><tbody></tbody></table>
-  </div>
+    <section class="grid">
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <h2>添加下游 API key</h2>
+            <p class="muted small">同一个 key 重复添加会返回 409；已有记录请直接编辑。额度按当前 <code>quota.period</code> 生效。</p>
+          </div>
+        </div>
+        <form id="add-key-form" class="add-form">
+          <label>API key
+            <input id="new-key" type="password" autocomplete="off" placeholder="sk-..." required>
+          </label>
+          <label>显示名称
+            <input id="new-name" placeholder="例如 alice / bob weekly">
+          </label>
+          <label>额度
+            <input id="new-limit" type="number" min="0" step="1" placeholder="空 = 无限">
+          </label>
+          <label>初始状态
+            <select id="new-status">
+              <option value="active">active</option>
+              <option value="pending">pending</option>
+              <option value="disabled">disabled</option>
+            </select>
+          </label>
+          <button class="primary" type="submit">添加 key</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <h2>下游 keys <span id="period-label" class="muted small"></span></h2>
+            <p class="muted small">默认按风险排序：超额/接近额度、pending/disabled、用量高的排在前面。</p>
+          </div>
+        </div>
+        <div class="toolbar" role="search">
+          <input id="key-search" class="grow" type="search" placeholder="搜索名称 / fingerprint / key hash / 状态">
+          <select id="status-filter">
+            <option value="all">全部状态</option>
+            <option value="active">active</option>
+            <option value="pending">pending</option>
+            <option value="disabled">disabled</option>
+            <option value="over_quota">已超额</option>
+          </select>
+          <select id="sort-mode">
+            <option value="risk">风险优先</option>
+            <option value="usage_desc">用量从高到低</option>
+            <option value="name_asc">名称 A → Z</option>
+            <option value="created_desc">最近发现</option>
+          </select>
+        </div>
+        <div id="keys-empty" class="empty-state" hidden>还没有 key。添加一个下游 key，或等待 unknown key 自动登记为 pending。</div>
+        <div class="table-wrap" id="keys-table-wrap">
+          <table id="keys">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Status</th>
+                <th id="th-limit">Usage</th>
+                <th>Input / Cached / Output</th>
+                <th>Last seen</th>
+                <th>Key hash</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <h2>Active route bans</h2>
+            <p class="muted small">这里展示当前还在生效的上游禁用记录；手动 unban 会立即解除。</p>
+          </div>
+          <button id="refresh-bans-btn" class="ghost" type="button">刷新 bans</button>
+        </div>
+        <div id="bans-empty" class="empty-state" hidden>当前没有 active route ban。</div>
+        <div class="table-wrap" id="bans-table-wrap">
+          <table id="bans">
+            <thead>
+              <tr><th>Target</th><th>Reason</th><th>Provider / Model</th><th>Expires</th><th>Action</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <aside id="edit-drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-backdrop" data-action="close-drawer"></div>
+    <form id="edit-form" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <div class="drawer-head">
+        <div class="card-title">
+          <h2 id="edit-title">编辑下游 key</h2>
+          <p id="edit-fingerprint" class="muted small"></p>
+        </div>
+        <button class="icon ghost" type="button" data-action="close-drawer" aria-label="关闭">×</button>
+      </div>
+      <div class="drawer-body">
+        <input id="edit-key-hash" type="hidden">
+        <div class="field-grid">
+          <label class="full">显示名称
+            <input id="edit-name" placeholder="显示名称">
+          </label>
+          <label>状态
+            <select id="edit-status">
+              <option value="active">active</option>
+              <option value="pending">pending</option>
+              <option value="disabled">disabled</option>
+            </select>
+          </label>
+          <label>额度
+            <input id="edit-limit" type="number" min="0" step="1" placeholder="空 = 无限">
+          </label>
+        </div>
+        <div class="callout small">
+          <strong>说明：</strong>这里不能查看或修改明文 API key；插件只保存 HMAC 后的 key hash。要更换明文 key，请删除旧记录后添加新 key。
+        </div>
+        <div class="callout small">
+          <div>Key hash</div>
+          <code id="edit-hash-preview" class="mono"></code>
+          <button id="copy-edit-hash" class="link" type="button">复制 hash</button>
+        </div>
+      </div>
+      <div class="drawer-footer">
+        <button id="delete-from-drawer" class="danger" type="button">删除这个 key</button>
+        <div class="actions">
+          <button class="ghost" type="button" data-action="close-drawer">取消</button>
+          <button class="primary" type="submit">保存修改</button>
+        </div>
+      </div>
+    </form>
+  </aside>
 
 <script>
+const state = {
+  keys: [],
+  bans: [],
+  period: '',
+  metric: 'output_tokens',
+  loadedAt: null,
+  toastTimer: null
+};
+
+function $(id) { return document.getElementById(id); }
+
 function managementKey() {
-  const v = document.getElementById('management-key').value;
-  try { localStorage.setItem('uqg_management_key', v); } catch (e) {}
-  return v;
-}
-window.addEventListener('DOMContentLoaded', function () {
+  const value = $('management-key').value.trim();
   try {
-    const saved = localStorage.getItem('uqg_management_key');
-    if (saved) document.getElementById('management-key').value = saved;
+    if (value) localStorage.setItem('uqg_management_key', value);
   } catch (e) {}
-});
-function setStatus(text, ok = true) {
-  const el = document.getElementById('status');
-  el.textContent = text || '';
-  el.className = ok ? 'ok' : 'warn';
+  return value;
 }
-function setError(err) { document.getElementById('error').textContent = err ? String(err) : ''; }
+
+function setStatus(text, kind = 'idle') {
+  $('status-text').textContent = text || '';
+  const dot = $('status-dot');
+  dot.className = 'dot' + (kind === 'ok' ? ' ok' : kind === 'warn' ? ' warn' : kind === 'err' ? ' err' : '');
+}
+
+function showToast(message, kind = 'ok') {
+  const toast = $('toast');
+  toast.textContent = String(message || '');
+  toast.className = 'toast show ' + kind;
+  clearTimeout(state.toastTimer);
+  state.toastTimer = setTimeout(() => { toast.className = 'toast'; }, 3600);
+}
+
+function setLoading(loading) {
+  document.body.classList.toggle('loading', !!loading);
+  $('refresh-btn').disabled = !!loading;
+  $('refresh-bans-btn').disabled = !!loading;
+}
+
 async function api(path, options = {}) {
-  const headers = Object.assign({'X-Management-Key': managementKey()}, options.headers || {});
+  const key = managementKey();
+  if (!key) {
+    const err = new Error('请先填写 CPA management key。');
+    err.status = 0;
+    throw err;
+  }
+  const headers = Object.assign({'X-Management-Key': key, 'Accept': 'application/json'}, options.headers || {});
   const res = await fetch('/v0/management/plugins/usage-quota-guard/' + path, Object.assign({}, options, { headers }));
   if (!res.ok) {
     let detail = '';
     try { const j = await res.json(); detail = j.message || j.error || ''; } catch (e) { detail = await res.text(); }
-    const e = new Error(detail || ('HTTP ' + res.status)); e.status = res.status; throw e;
+    const err = new Error(detail || ('HTTP ' + res.status));
+    err.status = res.status;
+    throw err;
   }
   return await res.json();
 }
+
 async function loadKeys() {
-  const keys = await api('api-keys');
-  const lbl = document.getElementById('period-label');
-  if (lbl) lbl.textContent = keys.period ? '（本期 ' + keys.period + '）' : '';
-  const thLimit = document.getElementById('th-limit');
-  if (thLimit && keys.metric) thLimit.textContent = 'Limit (' + keys.metric + ')';
-  document.querySelector('#keys tbody').innerHTML = (keys.items || []).map(k => `<tr id="row-${hashId(k.key_hash)}">
-    <td>${esc(k.display_name || '')}</td>
-    <td>${esc(k.fingerprint)}</td>
-    <td>${esc(k.status)}</td>
-    <td>${k.used_input_tokens ?? 0}</td>
-    <td>${k.used_cached_tokens ?? 0}</td>
-    <td><strong>${k.used_output_tokens ?? 0}</strong></td>
-    <td>${k.monthly_token_limit ?? '∞'}</td>
-    <td>${k.remaining_tokens ?? '∞'}</td>
-    <td><code>${esc(k.key_hash)}</code></td>
-    <td>
-      <button onclick="editKey('${escAttr(k.key_hash)}','${escAttr(k.display_name||'')}',${k.monthly_token_limit ?? 'null'},'${escAttr(k.status)}')">编辑</button>
-      <button class="danger" onclick="deleteKey('${escAttr(k.key_hash)}')">删除</button>
-    </td></tr>`).join('');
+  const data = await api('api-keys');
+  state.keys = data.items || [];
+  state.period = data.period || data.month || '';
+  state.metric = data.metric || 'output_tokens';
 }
+
 async function loadBans() {
-  const bans = await api('bans?active=true');
-  document.querySelector('#bans tbody').innerHTML = (bans.items || []).map(b => `<tr><td><code>${esc(b.target_key)}</code></td><td>${esc(b.reason)}</td><td>${esc(b.provider || '')}</td><td>${esc(b.model || '')}</td><td>${esc(b.expires_at)}</td><td><button onclick="unban('${escAttr(b.target_key)}')">unban</button></td></tr>`).join('');
+  const data = await api('bans?active=true');
+  state.bans = data.items || [];
 }
+
 async function loadAll() {
-  try { setError(''); setStatus('加载中...'); await loadKeys(); await loadBans(); setStatus('已刷新'); }
-  catch (err) { setStatus('加载失败', false); setError(err); }
-}
-async function addKey() {
   try {
-    setError('');
-    const limitText = document.getElementById('new-limit').value.trim();
-    const body = {
-      api_key: document.getElementById('new-key').value,
-      display_name: document.getElementById('new-name').value,
-      monthly_token_limit: limitText === '' ? null : Number(limitText),
-      status: document.getElementById('new-status').value
-    };
-    await api('api-keys', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-    document.getElementById('new-key').value = '';
-    await loadAll();
+    setLoading(true);
+    setStatus('加载中…', 'warn');
+    await Promise.all([loadKeys(), loadBans()]);
+    state.loadedAt = new Date();
+    renderAll();
+    setStatus('已刷新 ' + state.loadedAt.toLocaleTimeString(), 'ok');
   } catch (err) {
-    if (err && err.status === 409) { setStatus('该 key 已存在', false); setError(err.message); }
-    else { setStatus('添加失败', false); setError(err); }
+    setStatus('加载失败', 'err');
+    showToast(err.message || err, 'err');
+  } finally {
+    setLoading(false);
   }
 }
-function editKey(keyHash, name, limit, status) {
-  const tr = document.getElementById('row-' + hashId(keyHash));
-  if (!tr) return;
-  const lim = limit === null ? '' : limit;
-  tr.innerHTML = `<td colspan="10" class="inline-form">
-    <input id="ed-name-${hashId(keyHash)}" value="${escAttr(name)}" placeholder="显示名称">
-    <input id="ed-limit-${hashId(keyHash)}" type="number" min="0" value="${lim}" placeholder="额度，空=无限">
-    <select id="ed-status-${hashId(keyHash)}"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
-    <button onclick="saveEdit('${escAttr(keyHash)}')">保存</button>
-    <button onclick="loadKeys()">取消</button>
-  </td>`;
-  document.getElementById('ed-status-' + hashId(keyHash)).value = status || 'active';
+
+function renderAll() {
+  renderSummary();
+  renderKeys();
+  renderBans();
 }
-async function saveEdit(keyHash) {
+
+function renderSummary() {
+  const total = state.keys.length;
+  const active = state.keys.filter(k => k.status === 'active').length;
+  const pending = state.keys.filter(k => k.status === 'pending').length;
+  const disabled = state.keys.filter(k => k.status === 'disabled').length;
+  const output = state.keys.reduce((sum, k) => sum + number(k.used_output_tokens), 0);
+  const nearOrOver = state.keys.filter(k => usagePercent(k) >= 85).length;
+  const over = state.keys.filter(k => isOverQuota(k)).length;
+  const risk = nearOrOver + state.bans.length;
+
+  $('summary-total').textContent = formatNumber(total);
+  $('summary-total-note').textContent = `${active} active · ${pending} pending · ${disabled} disabled`;
+  $('summary-active').textContent = formatNumber(active);
+  $('summary-output').textContent = formatNumber(output);
+  $('summary-risk').textContent = formatNumber(risk);
+  $('summary-risk-note').textContent = `${over} over quota · ${nearOrOver} near quota · ${state.bans.length} active bans`;
+  $('summary-period').textContent = state.period || '—';
+  $('summary-metric').textContent = state.metric || 'output_tokens';
+  $('period-label').textContent = state.period ? `（本期 ${state.period}）` : '';
+  $('th-limit').textContent = `Usage (${state.metric || 'output_tokens'})`;
+}
+
+function applyFilters(items = state.keys) {
+  const query = $('key-search').value.trim().toLowerCase();
+  const status = $('status-filter').value;
+  const sort = $('sort-mode').value;
+  let filtered = items.filter(k => {
+    if (status === 'over_quota' && !isOverQuota(k)) return false;
+    if (status !== 'all' && status !== 'over_quota' && k.status !== status) return false;
+    if (!query) return true;
+    return [k.display_name, k.fingerprint, k.key_hash, k.status].some(v => String(v || '').toLowerCase().includes(query));
+  });
+  filtered = filtered.slice().sort((a, b) => {
+    if (sort === 'usage_desc') return usedByMetric(b) - usedByMetric(a);
+    if (sort === 'name_asc') return displayName(a).localeCompare(displayName(b));
+    if (sort === 'created_desc') return Date.parse(b.first_seen_at || 0) - Date.parse(a.first_seen_at || 0);
+    return riskScore(b) - riskScore(a) || usedByMetric(b) - usedByMetric(a) || displayName(a).localeCompare(displayName(b));
+  });
+  return filtered;
+}
+
+function renderKeys() {
+  const items = applyFilters();
+  const tbody = document.querySelector('#keys tbody');
+  const empty = $('keys-empty');
+  const wrap = $('keys-table-wrap');
+  if (!items.length) {
+    tbody.innerHTML = '';
+    empty.hidden = false;
+    empty.textContent = state.keys.length ? '没有符合筛选条件的 key。' : '还没有 key。添加一个下游 key，或等待 unknown key 自动登记为 pending。';
+    wrap.hidden = true;
+    return;
+  }
+  empty.hidden = true;
+  wrap.hidden = false;
+  tbody.innerHTML = items.map(k => {
+    const used = usedByMetric(k);
+    const limit = limitOf(k);
+    const pct = usagePercent(k);
+    const fillClass = pct >= 100 ? 'over' : pct >= 85 ? 'warn' : '';
+    const remaining = remainingOf(k);
+    const statusClass = isOverQuota(k) ? 'over' : (k.status || 'pending');
+    const statusText = isOverQuota(k) ? 'over quota' : (k.status || 'pending');
+    return `<tr data-key-hash="${escAttr(k.key_hash)}">
+      <td>
+        <div class="name-cell">
+          <div class="name-line">${esc(displayName(k))}</div>
+          <div class="hash-line"><span>${esc(k.fingerprint || 'no fingerprint')}</span><button class="link" type="button" data-action="copy" data-copy="${escAttr(k.fingerprint || '')}">复制 fingerprint</button></div>
+        </div>
+      </td>
+      <td><span class="pill ${escAttr(statusClass)}">${esc(statusText)}</span></td>
+      <td class="usage-cell">
+        <div class="usage-top"><span class="usage-number">${formatNumber(used)}</span><span class="usage-limit">/ ${limit == null ? '∞' : formatNumber(limit)}</span></div>
+        <div class="usage-bar" aria-label="quota usage"><div class="usage-fill ${fillClass}" style="width:${Math.min(100, pct)}%"></div></div>
+        <div class="usage-breakdown"><span>${limit == null ? '无限额度' : `剩余 ${formatNumber(Math.max(0, remaining || 0))}`}</span><span>${limit == null ? '' : pct.toFixed(1) + '%'}</span></div>
+      </td>
+      <td><div class="usage-breakdown"><span>Input ${formatNumber(k.used_input_tokens)}</span><span>Cached ${formatNumber(k.used_cached_tokens)}</span><span><strong>Output ${formatNumber(k.used_output_tokens)}</strong></span></div></td>
+      <td><span class="small muted">${formatDate(k.last_seen_at || k.first_seen_at)}</span></td>
+      <td><code class="mono">${esc(shortHash(k.key_hash))}</code> <button class="link" type="button" data-action="copy" data-copy="${escAttr(k.key_hash)}">复制</button></td>
+      <td><div class="actions"><button type="button" data-action="edit">编辑</button><button class="danger" type="button" data-action="delete">删除</button></div></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderBans() {
+  const tbody = document.querySelector('#bans tbody');
+  const empty = $('bans-empty');
+  const wrap = $('bans-table-wrap');
+  if (!state.bans.length) {
+    tbody.innerHTML = '';
+    empty.hidden = false;
+    wrap.hidden = true;
+    return;
+  }
+  empty.hidden = true;
+  wrap.hidden = false;
+  tbody.innerHTML = state.bans.map(b => `<tr data-target-key="${escAttr(b.target_key)}">
+    <td><code class="mono">${esc(b.target_key)}</code> <button class="link" type="button" data-action="copy-ban" data-copy="${escAttr(b.target_key)}">复制</button></td>
+    <td><span class="pill disabled">${esc(b.reason || 'ban')}</span></td>
+    <td>${esc([b.provider, b.model].filter(Boolean).join(' / ') || '—')}</td>
+    <td><span class="small muted">${esc(formatDate(b.expires_at))}</span></td>
+    <td><button type="button" data-action="unban">unban</button></td>
+  </tr>`).join('');
+}
+
+async function addKey(event) {
+  event.preventDefault();
   try {
-    setError('');
-    const limText = document.getElementById('ed-limit-' + hashId(keyHash)).value.trim();
+    const limit = parseLimit($('new-limit').value);
     const body = {
-      key_hash: keyHash,
-      display_name: document.getElementById('ed-name-' + hashId(keyHash)).value,
-      monthly_token_limit: limText === '' ? null : Number(limText),
-      status: document.getElementById('ed-status-' + hashId(keyHash)).value
+      api_key: $('new-key').value.trim(),
+      display_name: $('new-name').value.trim(),
+      monthly_token_limit: limit,
+      status: $('new-status').value
     };
-    await api('api-keys', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-    await loadAll();
-  } catch (err) { setStatus('保存失败', false); setError(err); }
+    if (!body.api_key) throw new Error('API key 不能为空。');
+    setLoading(true);
+    await api('api-keys', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    $('new-key').value = '';
+    $('new-name').value = '';
+    $('new-limit').value = '';
+    await Promise.all([loadKeys(), loadBans()]);
+    renderAll();
+    setStatus('添加成功', 'ok');
+    showToast('下游 key 已添加。', 'ok');
+  } catch (err) {
+    const msg = err.status === 409 ? '这个 API key 已存在，请用编辑功能。' : (err.message || err);
+    setStatus('添加失败', 'err');
+    showToast(msg, 'err');
+  } finally {
+    setLoading(false);
+  }
 }
-async function deleteKey(keyHash) {
-  if (!confirm('确认删除这个 key？该 key 的历史用量记录会保留，但 key 本身无法再鉴权。')) return;
+
+function editKey(keyHash) {
+  openEditDrawer(keyHash);
+}
+
+function openEditDrawer(keyHash) {
+  const key = state.keys.find(k => k.key_hash === keyHash);
+  if (!key) return;
+  $('edit-key-hash').value = key.key_hash;
+  $('edit-name').value = key.display_name || '';
+  $('edit-status').value = key.status || 'active';
+  $('edit-limit').value = limitOf(key) == null ? '' : String(limitOf(key));
+  $('edit-fingerprint').textContent = key.fingerprint || '';
+  $('edit-hash-preview').textContent = key.key_hash || '';
+  const drawer = $('edit-drawer');
+  drawer.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('edit-name').focus(), 0);
+}
+
+function closeEditDrawer() {
+  const drawer = $('edit-drawer');
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
+}
+
+async function saveEdit(event) {
+  event.preventDefault();
   try {
-    setError('');
-    await api('api-keys', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key_hash: keyHash}) });
-    await loadAll();
-  } catch (err) { setStatus('删除失败', false); setError(err); }
+    const body = {
+      key_hash: $('edit-key-hash').value,
+      display_name: $('edit-name').value.trim(),
+      monthly_token_limit: parseLimit($('edit-limit').value),
+      status: $('edit-status').value
+    };
+    setLoading(true);
+    await api('api-keys', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    await Promise.all([loadKeys(), loadBans()]);
+    renderAll();
+    closeEditDrawer();
+    setStatus('保存成功', 'ok');
+    showToast('修改已保存。', 'ok');
+  } catch (err) {
+    setStatus('保存失败', 'err');
+    showToast(err.message || err, 'err');
+  } finally {
+    setLoading(false);
+  }
 }
+
+async function deleteKey(keyHash) {
+  const key = state.keys.find(k => k.key_hash === keyHash);
+  const label = key ? `${displayName(key)} (${key.fingerprint || shortHash(key.key_hash)})` : shortHash(keyHash);
+  if (!confirm(`确认删除 ${label}？\n\n历史用量会保留，但这个 key 记录会被移除，之后无法再通过该记录鉴权。`)) return;
+  try {
+    setLoading(true);
+    await api('api-keys', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key_hash: keyHash}) });
+    await Promise.all([loadKeys(), loadBans()]);
+    renderAll();
+    closeEditDrawer();
+    setStatus('删除成功', 'ok');
+    showToast('Key 已删除。', 'ok');
+  } catch (err) {
+    setStatus('删除失败', 'err');
+    showToast(err.message || err, 'err');
+  } finally {
+    setLoading(false);
+  }
+}
+
 async function unban(targetKey) {
-  try { await api('unban', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target_key: targetKey, reason: 'manual'}) }); await loadAll(); }
-  catch (err) { setStatus('解禁失败', false); setError(err); }
+  try {
+    setLoading(true);
+    await api('unban', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target_key: targetKey, reason: 'manual'}) });
+    await loadBans();
+    renderAll();
+    setStatus('已解除 ban', 'ok');
+    showToast('Route ban 已解除。', 'ok');
+  } catch (err) {
+    setStatus('解禁失败', 'err');
+    showToast(err.message || err, 'err');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function copyText(text, label = '内容') {
+  const value = String(text || '');
+  if (!value) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+    else {
+      const tmp = document.createElement('textarea');
+      tmp.value = value;
+      tmp.style.position = 'fixed';
+      tmp.style.opacity = '0';
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand('copy');
+      tmp.remove();
+    }
+    showToast(`${label} 已复制。`, 'ok');
+  } catch (e) {
+    showToast('复制失败，请手动选择复制。', 'err');
+  }
+}
+
+function parseLimit(raw) {
+  const text = String(raw || '').trim();
+  if (text === '') return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) throw new Error('额度必须是非负数字，或留空表示无限。');
+  return Math.trunc(n);
+}
+
+function usedByMetric(k) { return number(k.used_tokens ?? (state.metric === 'output_tokens' ? k.used_output_tokens : k.used_tokens)); }
+function limitOf(k) { return k.monthly_token_limit == null ? null : number(k.monthly_token_limit); }
+function remainingOf(k) { return k.remaining_tokens == null ? null : number(k.remaining_tokens); }
+function usagePercent(k) {
+  const limit = limitOf(k);
+  if (limit == null || limit <= 0) return 0;
+  return usedByMetric(k) / limit * 100;
+}
+function isOverQuota(k) { return limitOf(k) != null && usedByMetric(k) >= limitOf(k); }
+function riskScore(k) {
+  let score = usagePercent(k);
+  if (isOverQuota(k)) score += 10000;
+  if (k.status === 'pending') score += 350;
+  if (k.status === 'disabled') score += 180;
+  return score;
+}
+function displayName(k) { return (k.display_name || '').trim() || k.fingerprint || shortHash(k.key_hash) || '未命名 key'; }
+function number(v) { const n = Number(v || 0); return Number.isFinite(n) ? n : 0; }
+function formatNumber(v) { return new Intl.NumberFormat('en-US').format(number(v)); }
+function formatDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+}
+function shortHash(hash) {
+  const h = String(hash || '');
+  if (h.length <= 18) return h;
+  return h.slice(0, 10) + '…' + h.slice(-8);
 }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escAttr(v) { return esc(v).replace(/`/g, '&#96;'); }
-function hashId(h) { return String(h || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24); }
+
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    const saved = localStorage.getItem('uqg_management_key');
+    if (saved) $('management-key').value = saved;
+  } catch (e) {}
+
+  $('refresh-btn').addEventListener('click', loadAll);
+  $('refresh-bans-btn').addEventListener('click', async () => {
+    try { setLoading(true); await loadBans(); renderAll(); setStatus('bans 已刷新', 'ok'); }
+    catch (err) { setStatus('bans 刷新失败', 'err'); showToast(err.message || err, 'err'); }
+    finally { setLoading(false); }
+  });
+  $('clear-filters-btn').addEventListener('click', () => {
+    $('key-search').value = '';
+    $('status-filter').value = 'all';
+    $('sort-mode').value = 'risk';
+    renderKeys();
+  });
+  $('toggle-key-btn').addEventListener('click', () => {
+    const input = $('management-key');
+    input.type = input.type === 'password' ? 'text' : 'password';
+    $('toggle-key-btn').textContent = input.type === 'password' ? '显示' : '隐藏';
+  });
+  $('forget-key-btn').addEventListener('click', () => {
+    $('management-key').value = '';
+    try { localStorage.removeItem('uqg_management_key'); } catch (e) {}
+    setStatus('已忘记 management key', 'warn');
+    showToast('已从当前浏览器删除 management key。', 'warn');
+  });
+  $('management-key-form').addEventListener('submit', event => {
+    event.preventDefault();
+    loadAll();
+  });
+  $('add-key-form').addEventListener('submit', addKey);
+  $('edit-form').addEventListener('submit', saveEdit);
+  $('copy-edit-hash').addEventListener('click', () => copyText($('edit-key-hash').value, 'Key hash'));
+  $('delete-from-drawer').addEventListener('click', () => deleteKey($('edit-key-hash').value));
+  document.querySelectorAll('[data-action="close-drawer"]').forEach(el => el.addEventListener('click', closeEditDrawer));
+  $('key-search').addEventListener('input', renderKeys);
+  $('status-filter').addEventListener('change', renderKeys);
+  $('sort-mode').addEventListener('change', renderKeys);
+
+  document.querySelector('#keys tbody').addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const tr = button.closest('tr');
+    const keyHash = tr ? tr.dataset.keyHash : '';
+    if (button.dataset.action === 'edit') openEditDrawer(keyHash);
+    if (button.dataset.action === 'delete') deleteKey(keyHash);
+    if (button.dataset.action === 'copy') copyText(button.dataset.copy, button.textContent.includes('fingerprint') ? 'Fingerprint' : 'Key hash');
+  });
+  document.querySelector('#bans tbody').addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const tr = button.closest('tr');
+    const targetKey = tr ? tr.dataset.targetKey : '';
+    if (button.dataset.action === 'unban') unban(targetKey);
+    if (button.dataset.action === 'copy-ban') copyText(button.dataset.copy, 'Target key');
+  });
+
+  renderAll();
+  if ($('management-key').value) loadAll();
+  else setStatus('请输入 management key', 'warn');
+});
 </script>
 </body>
 </html>

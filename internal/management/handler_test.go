@@ -54,6 +54,26 @@ func TestDashboardHTMLIsInteractive(t *testing.T) {
 	if !strings.Contains(body, "localStorage") {
 		t.Fatalf("dashboard does not persist management key: %s", body)
 	}
+	for _, marker := range []string{
+		"id=\"summary-total\"",
+		"id=\"key-search\"",
+		"id=\"status-filter\"",
+		"class=\"usage-bar\"",
+		"id=\"edit-drawer\"",
+		"id=\"toast\"",
+		"id=\"keys-empty\"",
+		"copyText(",
+		"renderSummary(",
+		"applyFilters(",
+		"rel=\"icon\"",
+		"id=\"management-key-form\"",
+		"min-width: 0",
+		"overflow-wrap: anywhere",
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("dashboard missing UX marker %q", marker)
+		}
+	}
 }
 
 func TestAddAPIKeyRedactsResponse(t *testing.T) {
