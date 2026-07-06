@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "plugins": [
     {
       "id": "usage-quota-guard",
@@ -10,7 +10,13 @@
       "repository": "https://github.com/giraphant/cpa-plugin-usage-quota-guard",
       "homepage": "https://github.com/giraphant/cpa-plugin-usage-quota-guard",
       "license": "MIT",
-      "tags": ["usage", "quota", "scheduler", "429", "codex"],
+      "tags": [
+        "usage",
+        "quota",
+        "scheduler",
+        "429",
+        "codex"
+      ],
       "install": {
         "type": "github-release"
       }

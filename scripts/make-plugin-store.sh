@@ -38,7 +38,7 @@ SIZE="$(wc -c < "$ARTIFACT_DIR/$ZIP_NAME" | tr -d ' ')"
 
 cat > "$DIST_DIR/registry.json" <<JSON
 {
-  "schema_version": 2,
+  "schema_version": ${REGISTRY_SCHEMA_VERSION:-2},
   "plugins": [
     {
       "id": "usage-quota-guard",
