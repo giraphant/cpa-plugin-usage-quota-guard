@@ -106,7 +106,7 @@ func TestFrontendAuthRejectsPendingDisabledOverQuota(t *testing.T) {
 	now := time.Now()
 	limit := int64(1)
 	active, _ := st.AddAPIKey("sk-over", "over", &limit, store.KeyStatusActive, now)
-	_ = st.RecordUsage(store.UsageEvent{KeyHash: active.KeyHash, Timestamp: now, TotalTokens: 1})
+	_ = st.RecordUsage(store.UsageEvent{KeyHash: active.KeyHash, Timestamp: now, OutputTokens: 1, TotalTokens: 1})
 	_, _ = st.AddAPIKey("sk-disabled", "disabled", nil, store.KeyStatusDisabled, now)
 	for _, rawKey := range []string{"sk-unknown", "sk-disabled", "sk-over"} {
 		req := pluginapi.FrontendAuthRequest{Headers: http.Header{"Authorization": []string{"Bearer " + rawKey}}}

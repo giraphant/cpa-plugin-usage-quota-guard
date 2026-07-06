@@ -15,6 +15,9 @@ const (
 
 	QuotaPeriodMonthly = "monthly"
 	QuotaPeriodWeekly  = "weekly"
+
+	QuotaMetricTotal  = "total_tokens"
+	QuotaMetricOutput = "output_tokens"
 )
 
 type Duration struct {
@@ -73,6 +76,7 @@ type UsageConfig struct {
 
 type QuotaConfig struct {
 	Period           string `yaml:"period"`
+	Metric           string `yaml:"metric"`
 	OverQuotaStatus  int    `yaml:"over_quota_status"`
 	OverQuotaMessage string `yaml:"over_quota_message"`
 }
@@ -135,6 +139,10 @@ func Load(raw []byte) (Config, error) {
 	if cfg.Quota.Period == "" {
 		cfg.Quota.Period = QuotaPeriodMonthly
 	}
+	cfg.Quota.Metric = strings.ToLower(strings.TrimSpace(cfg.Quota.Metric))
+	if cfg.Quota.Metric == "" {
+		cfg.Quota.Metric = QuotaMetricOutput
+	}
 	if cfg.RouteHealth.Mode == "" {
 		cfg.RouteHealth.Mode = "plugin_scheduler"
 	}
@@ -156,7 +164,7 @@ func Default() Config {
 		UnknownKeyRegistration: true,
 		UnknownKeyAccess:       UnknownAccessDeny,
 		Usage:                  UsageConfig{DetailRetentionDays: 90, Timezone: "Asia/Shanghai"},
-		Quota:                  QuotaConfig{Period: QuotaPeriodMonthly, OverQuotaStatus: 429, OverQuotaMessage: "Token quota exceeded for this API key."},
+		Quota:                  QuotaConfig{Period: QuotaPeriodMonthly, Metric: QuotaMetricOutput, OverQuotaStatus: 429, OverQuotaMessage: "Token quota exceeded for this API key."},
 		RouteHealth:            RouteHealth{Enabled: true, Mode: "plugin_scheduler", Rules: defaultRouteHealthRules()},
 	}
 }
@@ -230,6 +238,9 @@ func (c Config) Validate() error {
 	}
 	if c.Quota.Period != QuotaPeriodMonthly && c.Quota.Period != QuotaPeriodWeekly {
 		return fmt.Errorf("quota.period must be %q or %q", QuotaPeriodMonthly, QuotaPeriodWeekly)
+	}
+	if c.Quota.Metric != QuotaMetricTotal && c.Quota.Metric != QuotaMetricOutput {
+		return fmt.Errorf("quota.metric must be %q or %q", QuotaMetricTotal, QuotaMetricOutput)
 	}
 	if _, err := time.LoadLocation(c.Usage.Timezone); err != nil {
 		return fmt.Errorf("invalid usage.timezone: %w", err)

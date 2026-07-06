@@ -54,7 +54,7 @@ func Handle(req pluginapi.ManagementRequest, st *store.Store, cfg config.Config)
 		if err != nil {
 			return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		}
-		return jsonResp(http.StatusOK, map[string]any{"items": items, "month": month, "period": month})
+		return jsonResp(http.StatusOK, map[string]any{"items": items, "month": month, "period": month, "metric": cfg.Quota.Metric})
 	case req.Method == http.MethodPost && path == "/api-keys":
 		var body struct {
 			APIKey            string `json:"api_key"`

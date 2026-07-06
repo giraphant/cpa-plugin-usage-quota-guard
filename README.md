@@ -18,6 +18,15 @@ The plugin uses only CPA's official plugin ABI. It does not patch or fork `route
 
 The limit field is still named `monthly_token_limit` for backward compatibility, but its meaning is "per configured period". Switching period does not migrate historical rows; usage already recorded under the old period key simply ages out.
 
+## Quota metric
+
+`quota.metric` selects which token stream the limit is compared against:
+
+- `output_tokens` (default): only output tokens count. Output maps almost linearly to cost, while cached input is cheap, so this is the fairest proxy for spend when splitting one upstream key between several downstream users.
+- `total_tokens`: input + output + reasoning (legacy behavior).
+
+The dashboard splits usage into Input / Cached / Output columns regardless of metric, so you can see what each downstream key actually consumes. The `Limit` column header shows the active metric.
+
 ## Current CPA limitation
 
 CPA's `frontend_auth_provider` API returns only `Authenticated`/`Principal`/`Metadata`. It cannot return a custom HTTP status or JSON error body. Therefore over-quota, pending, disabled, and unknown keys are rejected by returning `Authenticated: false`; CPA then controls the downstream HTTP status/body for auth failure.
@@ -28,16 +37,16 @@ The plugin still stores `quota.over_quota_status` and `quota.over_quota_message`
 
 ```bash
 go test ./...
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.4.dylib ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.5.dylib ./cmd/plugin
 ```
 
 On Linux, build a `.so` instead:
 
 ```bash
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.4.so ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.5.so ./cmd/plugin
 ```
 
-CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.4.dylib`.
+CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.5.dylib`.
 
 ## Install through CPA plugin store
 
@@ -56,7 +65,7 @@ The checked-in `dist/plugin-store/registry.json` uses CPA's `github-release` ins
 CPA will download the matching release asset named like:
 
 ```text
-usage-quota-guard_0.1.4_linux_amd64.zip
+usage-quota-guard_0.1.5_linux_amd64.zip
 ```
 
 and verify it with the release `checksums.txt` file.
@@ -64,8 +73,8 @@ and verify it with the release `checksums.txt` file.
 To publish a new version, push a tag:
 
 ```bash
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 ## CPA config example
@@ -104,6 +113,7 @@ plugins:
 
       quota:
         period: "monthly"   # "monthly" (YYYY-MM) or "weekly" (ISO week YYYY-Www)
+        metric: "output_tokens"  # "output_tokens" (default) or "total_tokens"
         over_quota_status: 429
         over_quota_message: "Token quota exceeded for this API key."
 

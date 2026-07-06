@@ -46,8 +46,27 @@ type APIKey struct {
 	Status            string `json:"status"`
 	FirstSeenAt       string `json:"first_seen_at"`
 	LastSeenAt        string `json:"last_seen_at,omitempty"`
+	Metric            string `json:"metric,omitempty"`
 	UsedTokens        int64  `json:"used_tokens"`
+	UsedInputTokens   int64  `json:"used_input_tokens,omitempty"`
+	UsedOutputTokens  int64  `json:"used_output_tokens,omitempty"`
+	UsedCachedTokens  int64  `json:"used_cached_tokens,omitempty"`
 	RemainingTokens   *int64 `json:"remaining_tokens,omitempty"`
+}
+
+type UsageTotals struct {
+	Input      int64
+	Output     int64
+	CacheRead  int64
+	CacheWrite int64
+	Total      int64
+}
+
+func (t UsageTotals) ByMetric(metric string) int64 {
+	if metric == config.QuotaMetricOutput {
+		return t.Output
+	}
+	return t.Total
 }
 
 type AuthResult struct {
@@ -178,10 +197,11 @@ func (s *Store) AuthenticateKey(rawKey string, now time.Time) (AuthResult, error
 		return AuthResult{Allowed: false, Reason: status, KeyHash: keyHash, Fingerprint: fp, DisplayName: displayName, Status: status}, nil
 	}
 	month := s.cfg.CurrentPeriod(now)
-	used, err := s.MonthlyUsage(keyHash, month)
+	totals, err := s.PeriodTotals(keyHash, month)
 	if err != nil {
 		return AuthResult{}, err
 	}
+	used := totals.ByMetric(s.cfg.Quota.Metric)
 	if limit.Valid && used >= limit.Int64 {
 		return AuthResult{Allowed: false, Reason: "over_quota", KeyHash: keyHash, Fingerprint: fp, DisplayName: displayName, Status: status}, nil
 	}
@@ -241,7 +261,15 @@ func (s *Store) GetAPIKey(keyHash, month string) (APIKey, error) {
 	if last.Valid {
 		key.LastSeenAt = last.String
 	}
-	key.UsedTokens, _ = s.MonthlyUsage(keyHash, month)
+	totals, err := s.PeriodTotals(keyHash, month)
+	if err != nil {
+		return APIKey{}, err
+	}
+	key.Metric = s.cfg.Quota.Metric
+	key.UsedInputTokens = totals.Input
+	key.UsedOutputTokens = totals.Output
+	key.UsedCachedTokens = totals.CacheRead
+	key.UsedTokens = totals.ByMetric(s.cfg.Quota.Metric)
 	if key.MonthlyTokenLimit != nil {
 		remaining := *key.MonthlyTokenLimit - key.UsedTokens
 		if remaining < 0 {
@@ -250,6 +278,16 @@ func (s *Store) GetAPIKey(keyHash, month string) (APIKey, error) {
 		key.RemainingTokens = &remaining
 	}
 	return key, nil
+}
+
+func (s *Store) PeriodTotals(keyHash, period string) (UsageTotals, error) {
+	var t UsageTotals
+	row := s.db.QueryRow(`SELECT input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens FROM monthly_usage WHERE key_hash = ? AND month = ?`, keyHash, period)
+	err := row.Scan(&t.Input, &t.Output, &t.CacheRead, &t.CacheWrite, &t.Total)
+	if errors.Is(err, sql.ErrNoRows) {
+		return UsageTotals{}, nil
+	}
+	return t, err
 }
 
 func (s *Store) ListAPIKeys(month string) ([]APIKey, error) {

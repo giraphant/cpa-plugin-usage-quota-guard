@@ -70,7 +70,7 @@ func TestActiveKeyWithQuotaIsDeniedAfterUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddAPIKey: %v", err)
 	}
-	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, TotalTokens: 10}); err != nil {
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, OutputTokens: 10, TotalTokens: 10}); err != nil {
 		t.Fatalf("RecordUsage: %v", err)
 	}
 	res, err := st.AuthenticateKey("sk-active", now)
@@ -157,7 +157,59 @@ func TestDeleteAPIKey(t *testing.T) {
 	}
 }
 
+func TestAuthenticateByOutputMetric(t *testing.T) {
+	cfg := config.Default()
+	cfg.Quota.Metric = config.QuotaMetricOutput
+	cfg.Storage.SQLitePath = filepath.Join(t.TempDir(), "test.sqlite")
+	cfg.Secret.SecretFile = filepath.Join(t.TempDir(), "secret")
+	st, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	now := time.Now()
+	limit := int64(10)
+	key, err := st.AddAPIKey("sk-o", "o", &limit, KeyStatusActive, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, InputTokens: 1000, OutputTokens: 5}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	res, err := st.AuthenticateKey("sk-o", now)
+	if err != nil {
+		t.Fatalf("auth: %v", err)
+	}
+	if !res.Allowed {
+		t.Fatalf("expected allowed under output metric despite high input, got %+v", res)
+	}
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, OutputTokens: 6}); err != nil {
+		t.Fatalf("record2: %v", err)
+	}
+	res2, _ := st.AuthenticateKey("sk-o", now)
+	if res2.Allowed || res2.Reason != "over_quota" {
+		t.Fatalf("expected over_quota by output metric, got %+v", res2)
+	}
+}
+
+func TestPeriodTotals(t *testing.T) {
+	st := testStore(t)
+	now := time.Now()
+	key, _ := st.AddAPIKey("sk-t", "t", nil, KeyStatusActive, now)
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, InputTokens: 100, OutputTokens: 20, CacheReadTokens: 50, TotalTokens: 170}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	totals, err := st.PeriodTotals(key.KeyHash, st.cfg.CurrentPeriod(now))
+	if err != nil {
+		t.Fatalf("totals: %v", err)
+	}
+	if totals.Input != 100 || totals.Output != 20 || totals.CacheRead != 50 || totals.Total != 170 {
+		t.Fatalf("totals = %+v", totals)
+	}
+}
+
 func TestWeeklyPeriodUsage(t *testing.T) {
+
 	cfg := config.Default()
 	cfg.Quota.Period = config.QuotaPeriodWeekly
 	cfg.Storage.SQLitePath = filepath.Join(t.TempDir(), "test.sqlite")

@@ -113,3 +113,26 @@ func TestLoadRejectsInvalidQuotaPeriod(t *testing.T) {
 		t.Fatalf("expected error for invalid quota.period")
 	}
 }
+
+func TestQuotaMetricDefaultsToOutput(t *testing.T) {
+	cfg, _ := Load(nil)
+	if cfg.Quota.Metric != QuotaMetricOutput {
+		t.Fatalf("default metric = %q, want output_tokens", cfg.Quota.Metric)
+	}
+}
+
+func TestQuotaMetricOverride(t *testing.T) {
+	cfg, err := Load([]byte("quota:\n  metric: output_tokens\n"))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Quota.Metric != QuotaMetricOutput {
+		t.Fatalf("metric = %q, want output_tokens", cfg.Quota.Metric)
+	}
+}
+
+func TestLoadRejectsInvalidQuotaMetric(t *testing.T) {
+	if _, err := Load([]byte("quota:\n  metric: dollars\n")); err == nil {
+		t.Fatalf("expected error for invalid quota.metric")
+	}
+}

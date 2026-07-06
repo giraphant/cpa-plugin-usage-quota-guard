@@ -51,7 +51,7 @@
 
   <div class="card">
     <h2>下游 keys <span id="period-label" class="muted"></span></h2>
-    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Used</th><th>Limit</th><th>Remaining</th><th>Key Hash</th><th>操作</th></tr></thead><tbody></tbody></table>
+    <table id="keys"><thead><tr><th>Name</th><th>Fingerprint</th><th>Status</th><th>Input</th><th>Cached</th><th>Output</th><th id="th-limit">Limit</th><th>Remaining</th><th>Key Hash</th><th>操作</th></tr></thead><tbody></tbody></table>
   </div>
 
   <div class="card">
@@ -91,11 +91,15 @@ async function loadKeys() {
   const keys = await api('api-keys');
   const lbl = document.getElementById('period-label');
   if (lbl) lbl.textContent = keys.period ? '（本期 ' + keys.period + '）' : '';
+  const thLimit = document.getElementById('th-limit');
+  if (thLimit && keys.metric) thLimit.textContent = 'Limit (' + keys.metric + ')';
   document.querySelector('#keys tbody').innerHTML = (keys.items || []).map(k => `<tr id="row-${hashId(k.key_hash)}">
     <td>${esc(k.display_name || '')}</td>
     <td>${esc(k.fingerprint)}</td>
     <td>${esc(k.status)}</td>
-    <td>${k.used_tokens}</td>
+    <td>${k.used_input_tokens ?? 0}</td>
+    <td>${k.used_cached_tokens ?? 0}</td>
+    <td><strong>${k.used_output_tokens ?? 0}</strong></td>
     <td>${k.monthly_token_limit ?? '∞'}</td>
     <td>${k.remaining_tokens ?? '∞'}</td>
     <td><code>${esc(k.key_hash)}</code></td>
@@ -134,7 +138,7 @@ function editKey(keyHash, name, limit, status) {
   const tr = document.getElementById('row-' + hashId(keyHash));
   if (!tr) return;
   const lim = limit === null ? '' : limit;
-  tr.innerHTML = `<td colspan="8" class="inline-form">
+  tr.innerHTML = `<td colspan="10" class="inline-form">
     <input id="ed-name-${hashId(keyHash)}" value="${escAttr(name)}" placeholder="显示名称">
     <input id="ed-limit-${hashId(keyHash)}" type="number" min="0" value="${lim}" placeholder="额度，空=无限">
     <select id="ed-status-${hashId(keyHash)}"><option value="active">active</option><option value="pending">pending</option><option value="disabled">disabled</option></select>
