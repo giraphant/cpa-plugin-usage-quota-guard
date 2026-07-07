@@ -12,7 +12,7 @@ import (
 func FromCPA(record pluginapi.UsageRecord, cfg config.Config) store.UsageEvent {
 	total := record.Detail.TotalTokens
 	if total == 0 {
-		total = record.Detail.InputTokens + record.Detail.OutputTokens + record.Detail.ReasoningTokens
+		total = record.Detail.InputTokens + record.Detail.OutputTokens + record.Detail.ReasoningTokens + record.Detail.CacheReadTokens + record.Detail.CacheCreationTokens
 	}
 	statusCode := 0
 	errorType := ""

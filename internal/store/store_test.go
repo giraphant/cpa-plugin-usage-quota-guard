@@ -208,6 +208,57 @@ func TestPeriodTotals(t *testing.T) {
 	}
 }
 
+func TestRecordUsageTotalFallbackIncludesDetailedCacheTokens(t *testing.T) {
+	st := testStore(t)
+	now := time.Now()
+	key, _ := st.AddAPIKey("sk-cache-total", "cache", nil, KeyStatusActive, now)
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, InputTokens: 10, OutputTokens: 20, ReasoningTokens: 5, CacheReadTokens: 100, CacheCreationTokens: 40}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	totals, err := st.PeriodTotals(key.KeyHash, st.cfg.CurrentPeriod(now))
+	if err != nil {
+		t.Fatalf("totals: %v", err)
+	}
+	if totals.Total != 175 {
+		t.Fatalf("total = %d, want 175", totals.Total)
+	}
+}
+
+func TestCachedPromptTokensAreAggregatedForOpenAIStyleUsage(t *testing.T) {
+	st := testStore(t)
+	now := time.Now()
+	key, _ := st.AddAPIKey("sk-cache-openai", "cache", nil, KeyStatusActive, now)
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, InputTokens: 100, OutputTokens: 20, CachedTokens: 70, TotalTokens: 120}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	totals, err := st.PeriodTotals(key.KeyHash, st.cfg.CurrentPeriod(now))
+	if err != nil {
+		t.Fatalf("totals: %v", err)
+	}
+	if totals.CacheRead != 70 {
+		t.Fatalf("cache read = %d, want 70", totals.CacheRead)
+	}
+	if totals.Input != 30 {
+		t.Fatalf("uncached input = %d, want 30", totals.Input)
+	}
+}
+
+func TestAPIKeyCachedUsageIncludesReadsAndWrites(t *testing.T) {
+	st := testStore(t)
+	now := time.Now()
+	key, _ := st.AddAPIKey("sk-cache-display", "cache", nil, KeyStatusActive, now)
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, InputTokens: 100, OutputTokens: 20, CacheReadTokens: 50, CacheCreationTokens: 30, TotalTokens: 200}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	got, err := st.GetAPIKey(key.KeyHash, st.cfg.CurrentPeriod(now))
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
+	if got.UsedCachedTokens != 80 {
+		t.Fatalf("cached usage = %d, want 80", got.UsedCachedTokens)
+	}
+}
+
 func TestWeeklyPeriodUsage(t *testing.T) {
 
 	cfg := config.Default()

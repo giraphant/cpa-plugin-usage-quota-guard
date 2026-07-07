@@ -62,6 +62,10 @@ type UsageTotals struct {
 	Total      int64
 }
 
+func (t UsageTotals) Cached() int64 {
+	return t.CacheRead + t.CacheWrite
+}
+
 func (t UsageTotals) ByMetric(metric string) int64 {
 	if metric == config.QuotaMetricOutput {
 		return t.Output
@@ -268,7 +272,7 @@ func (s *Store) GetAPIKey(keyHash, month string) (APIKey, error) {
 	key.Metric = s.cfg.Quota.Metric
 	key.UsedInputTokens = totals.Input
 	key.UsedOutputTokens = totals.Output
-	key.UsedCachedTokens = totals.CacheRead
+	key.UsedCachedTokens = totals.Cached()
 	key.UsedTokens = totals.ByMetric(s.cfg.Quota.Metric)
 	if key.MonthlyTokenLimit != nil {
 		remaining := *key.MonthlyTokenLimit - key.UsedTokens
@@ -334,7 +338,15 @@ func (s *Store) RecordUsage(event UsageEvent) error {
 		event.Month = s.cfg.CurrentPeriod(event.Timestamp)
 	}
 	if event.TotalTokens == 0 {
-		event.TotalTokens = event.InputTokens + event.OutputTokens + event.ReasoningTokens
+		event.TotalTokens = event.InputTokens + event.OutputTokens + event.ReasoningTokens + event.CacheReadTokens + event.CacheCreationTokens
+	}
+	inputTokens := event.InputTokens
+	cacheReadTokens := event.CacheReadTokens
+	if cacheReadTokens == 0 && event.CacheCreationTokens == 0 {
+		cacheReadTokens = event.CachedTokens
+		if inputTokens >= cacheReadTokens {
+			inputTokens -= cacheReadTokens
+		}
 	}
 	tx, err := s.db.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -349,7 +361,7 @@ func (s *Store) RecordUsage(event UsageEvent) error {
 	_, err = tx.Exec(`INSERT INTO monthly_usage(key_hash, month, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, request_count, error_count, last_event_at, updated_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(key_hash, month) DO UPDATE SET input_tokens=input_tokens+excluded.input_tokens, output_tokens=output_tokens+excluded.output_tokens, cache_read_tokens=cache_read_tokens+excluded.cache_read_tokens, cache_write_tokens=cache_write_tokens+excluded.cache_write_tokens, total_tokens=total_tokens+excluded.total_tokens, request_count=request_count+1, error_count=error_count+excluded.error_count, last_event_at=excluded.last_event_at, updated_at=excluded.updated_at`,
-		event.KeyHash, event.Month, event.InputTokens, event.OutputTokens, event.CacheReadTokens, event.CacheCreationTokens, event.TotalTokens, 1, boolInt(event.Failed), ts(event.Timestamp), ts(time.Now()))
+		event.KeyHash, event.Month, inputTokens, event.OutputTokens, cacheReadTokens, event.CacheCreationTokens, event.TotalTokens, 1, boolInt(event.Failed), ts(event.Timestamp), ts(time.Now()))
 	if err != nil {
 		return err
 	}
