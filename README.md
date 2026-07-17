@@ -14,9 +14,9 @@ The plugin uses only CPA's official plugin ABI. It does not patch or fork `route
 `quota.period` selects the accounting window for `monthly_token_limit`:
 
 - `monthly` (default): `YYYY-MM`, e.g. `2026-07`.
-- `weekly`: ISO week `YYYY-Www`, e.g. `2026-W27` (Monday start).
+- `weekly`: starts with ISO week `YYYY-Www`; after a Codex response exposes `x-codex-secondary-reset-at`, the plugin persists that weekly boundary and advances all downstream keys together when the upstream cycle resets.
 
-The limit field is still named `monthly_token_limit` for backward compatibility, but its meaning is "per configured period". Switching period does not migrate historical rows; usage already recorded under the old period key simply ages out.
+The persisted boundary lets an over-quota key recover without first reaching Codex. The limit field is still named `monthly_token_limit` for backward compatibility, but its meaning is "per configured period". Switching period does not migrate historical rows; usage already recorded under the old period key simply ages out.
 
 ## Quota metric
 
@@ -27,26 +27,32 @@ The limit field is still named `monthly_token_limit` for backward compatibility,
 
 The dashboard splits usage into Input / Cached / Output columns regardless of metric, so you can see what each downstream key actually consumes. The `Limit` column header shows the active metric.
 
-## Current CPA limitation
+## Current CPA limitations
 
 CPA's `frontend_auth_provider` API returns only `Authenticated`/`Principal`/`Metadata`. It cannot return a custom HTTP status or JSON error body. Therefore over-quota, pending, disabled, and unknown keys are rejected by returning `Authenticated: false`; CPA then controls the downstream HTTP status/body for auth failure.
 
 The plugin still stores `quota.over_quota_status` and `quota.over_quota_message` in config for future compatibility, but CPA v7.2.50 does not expose a way for a frontend-auth plugin to emit that custom 429 directly.
 
+CPA v7.2.50 through v7.2.83 can cancel a queued dynamic-plugin usage callback after the response ends. Successful response accounting still works on stock CPA: synchronous response and stream-chunk interceptors record token usage and the Codex weekly reset header before delivery completes. Records are deduplicated by downstream key and upstream request ID if the queued callback also arrives; responses without a request ID are skipped to avoid unsafe double counting.
+
+Query-parameter credential sources are rejected at configuration time because CPA response interceptors do not expose query parameters. Use `Authorization`, `X-Api-Key`, or `X-Goog-Api-Key` so successful requests can always be attributed to the correct downstream key.
+
+Response interceptors do not receive failed upstream responses. On affected CPA versions, failure-derived route bans, including Codex 429 observations, can therefore still be missed when the asynchronous usage callback is canceled.
+
 ## Build
 
 ```bash
 go test ./...
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.7.dylib ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.8.dylib ./cmd/plugin
 ```
 
 On Linux, build a `.so` instead:
 
 ```bash
-go build -buildmode=c-shared -o usage-quota-guard-v0.1.7.so ./cmd/plugin
+go build -buildmode=c-shared -o usage-quota-guard-v0.1.8.so ./cmd/plugin
 ```
 
-CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.7.dylib`.
+CPA plugin filenames should follow CPA's versioned convention, for example `usage-quota-guard-v0.1.8.dylib`.
 
 ## Install through CPA plugin store
 
@@ -65,7 +71,7 @@ The checked-in `dist/plugin-store/registry.json` uses CPA's `github-release` ins
 CPA will download the matching release asset named like:
 
 ```text
-usage-quota-guard_0.1.7_linux_amd64.zip
+usage-quota-guard_0.1.8_linux_amd64.zip
 ```
 
 and verify it with the release `checksums.txt` file.
@@ -73,8 +79,8 @@ and verify it with the release `checksums.txt` file.
 To publish a new version, push a tag:
 
 ```bash
-git tag v0.1.7
-git push origin v0.1.7
+git tag v0.1.8
+git push origin v0.1.8
 ```
 
 ## CPA config example
@@ -100,8 +106,6 @@ plugins:
           - authorization_bearer
           - x_api_key
           - x_goog_api_key
-          - query_key
-          - query_auth_token
 
       unknown_key_registration: true
       unknown_key_access: "deny"
@@ -112,7 +116,7 @@ plugins:
         timezone: "Asia/Shanghai"
 
       quota:
-        period: "monthly"   # "monthly" (YYYY-MM) or "weekly" (ISO week YYYY-Www)
+        period: "monthly"   # "monthly" (YYYY-MM) or "weekly" (Codex secondary reset, ISO-week fallback)
         metric: "output_tokens"  # "output_tokens" (default) or "total_tokens"
         over_quota_status: 429
         over_quota_message: "Token quota exceeded for this API key."
@@ -182,6 +186,17 @@ curl -X PATCH http://127.0.0.1:8317/v0/management/plugins/usage-quota-guard/api-
     "status": "active"
   }'
 ```
+
+### Reset a key's current usage
+
+```bash
+curl -X POST http://127.0.0.1:8317/v0/management/plugins/usage-quota-guard/api-keys/reset-usage \
+  -H "X-Management-Key: $CPA_MANAGEMENT_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key_hash":"hmac_..."}'
+```
+
+This clears only the key's aggregate for the active quota period. Request details and inactive-period aggregates are retained.
 
 ### Delete a key
 

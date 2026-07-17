@@ -628,7 +628,7 @@ function renderKeys() {
       <td><div class="usage-breakdown"><span>Input ${formatNumber(k.used_input_tokens)}</span><span>Cached ${formatNumber(k.used_cached_tokens)}</span><span><strong>Output ${formatNumber(k.used_output_tokens)}</strong></span></div></td>
       <td><span class="small muted">${formatDate(k.last_seen_at || k.first_seen_at)}</span></td>
       <td><code class="mono">${esc(shortHash(k.key_hash))}</code> <button class="link" type="button" data-action="copy" data-copy="${escAttr(k.key_hash)}">复制</button></td>
-      <td><div class="actions"><button type="button" data-action="edit">编辑</button><button class="danger" type="button" data-action="delete">删除</button></div></td>
+      <td><div class="actions"><button type="button" data-action="edit">编辑</button><button type="button" data-action="reset-usage">重置用量</button><button class="danger" type="button" data-action="delete">删除</button></div></td>
     </tr>`;
   }).join('');
 }
@@ -726,6 +726,25 @@ async function saveEdit(event) {
     showToast('修改已保存。', 'ok');
   } catch (err) {
     setStatus('保存失败', 'err');
+    showToast(err.message || err, 'err');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function resetUsage(keyHash) {
+  const key = state.keys.find(k => k.key_hash === keyHash);
+  const label = key ? `${displayName(key)} (${key.fingerprint || shortHash(key.key_hash)})` : shortHash(keyHash);
+  if (!confirm(`确认重置 ${label} 的本期用量？\n\n请求明细和历史周期用量会保留。`)) return;
+  try {
+    setLoading(true);
+    await api('api-keys/reset-usage', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key_hash: keyHash}) });
+    await loadKeys();
+    renderAll();
+    setStatus('用量已重置', 'ok');
+    showToast('本期用量已重置。', 'ok');
+  } catch (err) {
+    setStatus('重置失败', 'err');
     showToast(err.message || err, 'err');
   } finally {
     setLoading(false);
@@ -878,6 +897,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const tr = button.closest('tr');
     const keyHash = tr ? tr.dataset.keyHash : '';
     if (button.dataset.action === 'edit') openEditDrawer(keyHash);
+    if (button.dataset.action === 'reset-usage') resetUsage(keyHash);
     if (button.dataset.action === 'delete') deleteKey(keyHash);
     if (button.dataset.action === 'copy') copyText(button.dataset.copy, button.textContent.includes('fingerprint') ? 'Fingerprint' : 'Key hash');
   });

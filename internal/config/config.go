@@ -170,7 +170,7 @@ func Default() Config {
 }
 
 func defaultAcceptedSources() []string {
-	return []string{"authorization_bearer", "x_api_key", "x_goog_api_key", "query_key", "query_auth_token"}
+	return []string{"authorization_bearer", "x_api_key", "x_goog_api_key"}
 }
 
 func defaultRouteHealthRules() []RouteHealthRule {
@@ -235,6 +235,12 @@ func (c Config) Validate() error {
 	}
 	if c.UnknownKeyAccess != UnknownAccessDeny && c.UnknownKeyAccess != UnknownAccessAllow {
 		return fmt.Errorf("unknown_key_access must be %q or %q", UnknownAccessDeny, UnknownAccessAllow)
+	}
+	for _, source := range c.FrontendAuth.AcceptedSources {
+		switch strings.ToLower(strings.TrimSpace(source)) {
+		case "query_key", "query_auth_token":
+			return fmt.Errorf("frontend_auth.accepted_sources %q is unsupported because CPA response interceptors omit query parameters", source)
+		}
 	}
 	if c.Quota.Period != QuotaPeriodMonthly && c.Quota.Period != QuotaPeriodWeekly {
 		return fmt.Errorf("quota.period must be %q or %q", QuotaPeriodMonthly, QuotaPeriodWeekly)

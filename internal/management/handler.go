@@ -26,6 +26,7 @@ func Register() pluginapi.ManagementRegistrationResponse {
 			{Method: http.MethodPost, Path: "/plugins/usage-quota-guard/api-keys"},
 			{Method: http.MethodPatch, Path: "/plugins/usage-quota-guard/api-keys"},
 			{Method: http.MethodDelete, Path: "/plugins/usage-quota-guard/api-keys"},
+			{Method: http.MethodPost, Path: "/plugins/usage-quota-guard/api-keys/reset-usage"},
 			{Method: http.MethodGet, Path: "/plugins/usage-quota-guard/bans"},
 			{Method: http.MethodPost, Path: "/plugins/usage-quota-guard/unban"},
 		},
@@ -48,7 +49,11 @@ func Handle(req pluginapi.ManagementRequest, st *store.Store, cfg config.Config)
 	case req.Method == http.MethodGet && path == "/api-keys":
 		month := req.Query.Get("month")
 		if month == "" {
-			month = cfg.CurrentPeriod(time.Now())
+			var err error
+			month, err = st.CurrentPeriod(time.Now())
+			if err != nil {
+				return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			}
 		}
 		items, err := st.ListAPIKeys(month)
 		if err != nil {
@@ -105,6 +110,23 @@ func Handle(req pluginapi.ManagementRequest, st *store.Store, cfg config.Config)
 			return jsonResp(http.StatusBadRequest, map[string]any{"error": "key_hash is required"})
 		}
 		if err := st.DeleteAPIKey(body.KeyHash); err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) {
+				return jsonResp(http.StatusNotFound, map[string]any{"error": "api_key_not_found", "message": "This API key no longer exists."})
+			}
+			return jsonResp(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		}
+		return jsonResp(http.StatusOK, map[string]any{"ok": true})
+	case req.Method == http.MethodPost && path == "/api-keys/reset-usage":
+		var body struct {
+			KeyHash string `json:"key_hash"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return jsonResp(http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
+		}
+		if strings.TrimSpace(body.KeyHash) == "" {
+			return jsonResp(http.StatusBadRequest, map[string]any{"error": "key_hash is required"})
+		}
+		if err := st.ResetKeyUsage(body.KeyHash, time.Now()); err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				return jsonResp(http.StatusNotFound, map[string]any{"error": "api_key_not_found", "message": "This API key no longer exists."})
 			}

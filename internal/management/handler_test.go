@@ -36,6 +36,12 @@ func TestRegisterRoutes(t *testing.T) {
 	if reg.Resources[0].Path != "/dashboard" {
 		t.Fatalf("resource path = %q", reg.Resources[0].Path)
 	}
+	for _, route := range reg.Routes {
+		if route.Method == http.MethodPost && route.Path == "/plugins/usage-quota-guard/api-keys/reset-usage" {
+			return
+		}
+	}
+	t.Fatal("reset usage route is not registered")
 }
 
 func TestDashboardHTMLIsInteractive(t *testing.T) {
@@ -48,8 +54,8 @@ func TestDashboardHTMLIsInteractive(t *testing.T) {
 	if !strings.Contains(body, "id=\"management-key\"") || !strings.Contains(body, "loadKeys") || strings.Contains(body, "intentionally unauthenticated") {
 		t.Fatalf("dashboard is not interactive enough: %s", body)
 	}
-	if !strings.Contains(body, "deleteKey") || !strings.Contains(body, "editKey") {
-		t.Fatalf("dashboard missing edit/delete controls: %s", body)
+	if !strings.Contains(body, "deleteKey") || !strings.Contains(body, "editKey") || !strings.Contains(body, "resetUsage") {
+		t.Fatalf("dashboard missing key controls: %s", body)
 	}
 	if !strings.Contains(body, "localStorage") {
 		t.Fatalf("dashboard does not persist management key: %s", body)
@@ -139,6 +145,39 @@ func TestDeleteAPIKeyRoute(t *testing.T) {
 	list := Handle(pluginapi.ManagementRequest{Method: http.MethodGet, Path: prefix + "/api-keys"}, st, cfg)
 	if strings.Contains(string(list.Body), item.KeyHash) {
 		t.Fatalf("deleted key still listed: %s", string(list.Body))
+	}
+}
+
+func TestResetAPIKeyUsageRoute(t *testing.T) {
+	st, cfg := testStore(t)
+	now := time.Now()
+	limit := int64(5)
+	item, err := st.AddAPIKey("sk-reset", "reset", &limit, store.KeyStatusActive, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordUsage(store.UsageEvent{KeyHash: item.KeyHash, Timestamp: now, OutputTokens: 5}); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]string{"key_hash": item.KeyHash})
+	resp := Handle(pluginapi.ManagementRequest{Method: http.MethodPost, Path: prefix + "/api-keys/reset-usage", Body: body}, st, cfg)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reset status = %d body=%s", resp.StatusCode, string(resp.Body))
+	}
+	period, err := st.CurrentPeriod(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, err := st.MonthlyUsage(item.KeyHash, period)
+	if err != nil || used != 0 {
+		t.Fatalf("used after reset = %d err=%v", used, err)
+	}
+	if resp := Handle(pluginapi.ManagementRequest{Method: http.MethodPost, Path: prefix + "/api-keys/reset-usage", Body: []byte(`{}`)}, st, cfg); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing key status = %d", resp.StatusCode)
+	}
+	missing, _ := json.Marshal(map[string]string{"key_hash": "hmac_missing"})
+	if resp := Handle(pluginapi.ManagementRequest{Method: http.MethodPost, Path: prefix + "/api-keys/reset-usage", Body: missing}, st, cfg); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown key status = %d body=%s", resp.StatusCode, string(resp.Body))
 	}
 }
 

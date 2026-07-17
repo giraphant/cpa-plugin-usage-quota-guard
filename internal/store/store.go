@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -25,6 +26,8 @@ const (
 	KeyStatusPending  = "pending"
 	KeyStatusActive   = "active"
 	KeyStatusDisabled = "disabled"
+
+	quotaCycleCodexWeekly = "codex-weekly"
 )
 
 var (
@@ -36,6 +39,10 @@ type Store struct {
 	db     *sql.DB
 	cfg    config.Config
 	secret []byte
+	// ponytail: one lock matches the single shared upstream cycle; split it if accounts become distinct.
+	quotaMu sync.Mutex
+	// ponytail: the plugin owns one Store; this lock deduplicates synchronous and queued usage callbacks.
+	usageMu sync.Mutex
 }
 
 type APIKey struct {
@@ -200,8 +207,11 @@ func (s *Store) AuthenticateKey(rawKey string, now time.Time) (AuthResult, error
 	if status != KeyStatusActive {
 		return AuthResult{Allowed: false, Reason: status, KeyHash: keyHash, Fingerprint: fp, DisplayName: displayName, Status: status}, nil
 	}
-	month := s.cfg.CurrentPeriod(now)
-	totals, err := s.PeriodTotals(keyHash, month)
+	period, err := s.CurrentPeriod(now)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	totals, err := s.PeriodTotals(keyHash, period)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -229,7 +239,11 @@ func (s *Store) AddAPIKey(rawKey, displayName string, limit *int64, status strin
 	if n, _ := res.RowsAffected(); n == 0 {
 		return APIKey{}, ErrKeyAlreadyExists
 	}
-	return s.GetAPIKey(keyHash, s.cfg.CurrentPeriod(now))
+	period, err := s.CurrentPeriod(now)
+	if err != nil {
+		return APIKey{}, err
+	}
+	return s.GetAPIKey(keyHash, period)
 }
 
 func (s *Store) DeleteAPIKey(keyHash string) error {
@@ -248,7 +262,11 @@ func (s *Store) UpdateAPIKey(keyHash, displayName string, limit *int64, status s
 	if err != nil {
 		return APIKey{}, err
 	}
-	return s.GetAPIKey(keyHash, s.cfg.CurrentPeriod(now))
+	period, err := s.CurrentPeriod(now)
+	if err != nil {
+		return APIKey{}, err
+	}
+	return s.GetAPIKey(keyHash, period)
 }
 
 func (s *Store) GetAPIKey(keyHash, month string) (APIKey, error) {
@@ -294,6 +312,106 @@ func (s *Store) PeriodTotals(keyHash, period string) (UsageTotals, error) {
 	return t, err
 }
 
+func (s *Store) CurrentPeriod(now time.Time) (string, error) {
+	if s.cfg.Quota.Period != config.QuotaPeriodWeekly {
+		return s.cfg.CurrentPeriod(now), nil
+	}
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+
+	var period string
+	var nextReset, previousPeriod, periodStarted sql.NullString
+	err := s.db.QueryRow(`SELECT period, next_reset_at, previous_period, period_started_at FROM quota_cycle_state WHERE scope = ?`, quotaCycleCodexWeekly).Scan(&period, &nextReset, &previousPeriod, &periodStarted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s.cfg.CurrentPeriod(now), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if nextReset.Valid {
+		resetAt, err := time.Parse(time.RFC3339Nano, nextReset.String)
+		if err != nil {
+			return "", fmt.Errorf("parse quota reset time: %w", err)
+		}
+		if !now.UTC().Before(resetAt) {
+			previousPeriod = sql.NullString{String: period, Valid: true}
+			periodStarted = sql.NullString{String: ts(resetAt), Valid: true}
+			period = upstreamWeeklyPeriod(resetAt)
+			if _, err := s.db.Exec(`UPDATE quota_cycle_state SET period = ?, next_reset_at = NULL, previous_period = ?, period_started_at = ?, updated_at = ? WHERE scope = ?`, period, previousPeriod.String, periodStarted.String, ts(now), quotaCycleCodexWeekly); err != nil {
+				return "", err
+			}
+		}
+	}
+	if previousPeriod.Valid && periodStarted.Valid {
+		startedAt, err := time.Parse(time.RFC3339Nano, periodStarted.String)
+		if err != nil {
+			return "", fmt.Errorf("parse quota period start: %w", err)
+		}
+		if now.UTC().Before(startedAt) {
+			return previousPeriod.String, nil
+		}
+	}
+	return period, nil
+}
+
+func (s *Store) ObserveUpstreamWeeklyReset(resetAt, now time.Time) error {
+	if s.cfg.Quota.Period != config.QuotaPeriodWeekly || resetAt.IsZero() || !resetAt.After(now) {
+		return nil
+	}
+	resetAt = resetAt.UTC()
+	now = now.UTC()
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+
+	var period string
+	var nextReset sql.NullString
+	err := s.db.QueryRow(`SELECT period, next_reset_at FROM quota_cycle_state WHERE scope = ?`, quotaCycleCodexWeekly).Scan(&period, &nextReset)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = s.db.Exec(`INSERT INTO quota_cycle_state(scope, period, next_reset_at, updated_at) VALUES(?,?,?,?)`, quotaCycleCodexWeekly, s.cfg.CurrentPeriod(now), ts(resetAt), ts(now))
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if !nextReset.Valid {
+		_, err = s.db.Exec(`UPDATE quota_cycle_state SET next_reset_at = ?, updated_at = ? WHERE scope = ?`, ts(resetAt), ts(now), quotaCycleCodexWeekly)
+		return err
+	}
+	previous, err := time.Parse(time.RFC3339Nano, nextReset.String)
+	if err != nil {
+		return fmt.Errorf("parse quota reset time: %w", err)
+	}
+	if !resetAt.After(previous) {
+		return nil
+	}
+	if !now.Before(previous) {
+		_, err = s.db.Exec(`UPDATE quota_cycle_state SET period = ?, next_reset_at = ?, previous_period = ?, period_started_at = ?, updated_at = ? WHERE scope = ?`, upstreamWeeklyPeriod(previous), ts(resetAt), period, ts(previous), ts(now), quotaCycleCodexWeekly)
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE quota_cycle_state SET next_reset_at = ?, updated_at = ? WHERE scope = ?`, ts(resetAt), ts(now), quotaCycleCodexWeekly)
+	return err
+}
+
+func (s *Store) ResetKeyUsage(keyHash string, now time.Time) error {
+	var exists int
+	if err := s.db.QueryRow(`SELECT 1 FROM api_keys WHERE key_hash = ?`, keyHash).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrKeyNotFound
+		}
+		return err
+	}
+	period, err := s.CurrentPeriod(now)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`DELETE FROM monthly_usage WHERE key_hash = ? AND month = ?`, keyHash, period)
+	return err
+}
+
+func upstreamWeeklyPeriod(resetAt time.Time) string {
+	return fmt.Sprintf("codex-W-%d", resetAt.Unix())
+}
+
 func (s *Store) ListAPIKeys(month string) ([]APIKey, error) {
 	rows, err := s.db.Query(`SELECT key_hash FROM api_keys ORDER BY COALESCE(last_seen_at, first_seen_at) DESC`)
 	if err != nil {
@@ -334,9 +452,13 @@ func (s *Store) RecordUsage(event UsageEvent) error {
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now()
 	}
-	if event.Month == "" {
-		event.Month = s.cfg.CurrentPeriod(event.Timestamp)
+	s.usageMu.Lock()
+	defer s.usageMu.Unlock()
+	period, err := s.CurrentPeriod(event.Timestamp)
+	if err != nil {
+		return err
 	}
+	event.Month = period
 	if event.TotalTokens == 0 {
 		event.TotalTokens = event.InputTokens + event.OutputTokens + event.ReasoningTokens + event.CacheReadTokens + event.CacheCreationTokens
 	}
@@ -353,6 +475,16 @@ func (s *Store) RecordUsage(event UsageEvent) error {
 		return err
 	}
 	defer tx.Rollback()
+	if event.RequestID != "" {
+		var exists int
+		err = tx.QueryRow(`SELECT 1 FROM usage_events WHERE request_id = ? AND key_hash = ? LIMIT 1`, event.RequestID, event.KeyHash).Scan(&exists)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
 	_, err = tx.Exec(`INSERT INTO usage_events(request_id,key_hash,ts,month,provider,model,auth_id,auth_type,status_code,failed,error_type,input_tokens,output_tokens,reasoning_tokens,cached_tokens,cache_read_tokens,cache_creation_tokens,total_tokens,stream,latency_ms)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.RequestID, event.KeyHash, ts(event.Timestamp), event.Month, event.Provider, event.Model, event.AuthID, event.AuthType, event.StatusCode, boolInt(event.Failed), event.ErrorType, event.InputTokens, event.OutputTokens, event.ReasoningTokens, event.CachedTokens, event.CacheReadTokens, event.CacheCreationTokens, event.TotalTokens, boolInt(event.Stream), event.LatencyMS)
 	if err != nil {
@@ -447,10 +579,12 @@ var migrations = []string{
 	`CREATE TABLE IF NOT EXISTS usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT, key_hash TEXT NOT NULL, ts TEXT NOT NULL, month TEXT NOT NULL, provider TEXT, model TEXT, auth_id TEXT, auth_type TEXT, status_code INTEGER, failed INTEGER NOT NULL DEFAULT 0, error_type TEXT, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, reasoning_tokens INTEGER NOT NULL DEFAULT 0, cached_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0, total_tokens INTEGER NOT NULL DEFAULT 0, stream INTEGER NOT NULL DEFAULT 0, latency_ms INTEGER);`,
 	`CREATE TABLE IF NOT EXISTS monthly_usage (key_hash TEXT NOT NULL, month TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_write_tokens INTEGER NOT NULL DEFAULT 0, total_tokens INTEGER NOT NULL DEFAULT 0, request_count INTEGER NOT NULL DEFAULT 0, error_count INTEGER NOT NULL DEFAULT 0, last_event_at TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (key_hash, month));`,
 	`CREATE TABLE IF NOT EXISTS route_bans (id INTEGER PRIMARY KEY AUTOINCREMENT, target_key TEXT NOT NULL, provider TEXT, model TEXT, auth_id TEXT, auth_type TEXT, reason TEXT NOT NULL, status_code INTEGER, banned_at TEXT NOT NULL, expires_at TEXT NOT NULL, unbanned_at TEXT NULL, unban_reason TEXT NULL, source_request_id TEXT NULL, metadata_json TEXT NULL);`,
+	`CREATE TABLE IF NOT EXISTS quota_cycle_state (scope TEXT PRIMARY KEY, period TEXT NOT NULL, next_reset_at TEXT NULL, previous_period TEXT NULL, period_started_at TEXT NULL, updated_at TEXT NOT NULL);`,
 	`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);`,
 	`CREATE INDEX IF NOT EXISTS idx_api_keys_status ON api_keys(status);`,
 	`CREATE INDEX IF NOT EXISTS idx_api_keys_last_seen ON api_keys(last_seen_at);`,
 	`CREATE INDEX IF NOT EXISTS idx_usage_events_key_ts ON usage_events(key_hash, ts);`,
+	`CREATE INDEX IF NOT EXISTS idx_usage_events_request_key ON usage_events(request_id, key_hash);`,
 	`CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts);`,
 	`CREATE INDEX IF NOT EXISTS idx_usage_events_month ON usage_events(month);`,
 	`CREATE INDEX IF NOT EXISTS idx_monthly_usage_month_tokens ON monthly_usage(month, total_tokens);`,

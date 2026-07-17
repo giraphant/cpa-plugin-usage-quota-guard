@@ -130,6 +130,13 @@ func codexResetDuration(headers http.Header, now time.Time) time.Duration {
 	return latest.Sub(now)
 }
 
+func CodexWeeklyResetAt(headers http.Header) (time.Time, bool) {
+	if headers == nil {
+		return time.Time{}, false
+	}
+	return parseResetAt(headers.Get("x-codex-secondary-reset-at"))
+}
+
 func retryAfterDuration(headers http.Header) time.Duration {
 	if headers == nil {
 		return 0
