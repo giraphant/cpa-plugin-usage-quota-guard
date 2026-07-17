@@ -35,12 +35,16 @@ func TestMigrationsAndWAL(t *testing.T) {
 	if journal != "wal" {
 		t.Fatalf("journal mode = %q", journal)
 	}
-	for _, table := range []string{"api_keys", "usage_events", "monthly_usage", "route_bans"} {
+	for _, table := range []string{"api_keys", "usage_events", "monthly_usage", "route_bans", "quota_cycle_state"} {
 		var name string
 		err := st.DB().QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)
 		if err != nil {
 			t.Fatalf("table %s missing: %v", table, err)
 		}
+	}
+	var index string
+	if err := st.DB().QueryRow(`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_usage_events_request_key'`).Scan(&index); err != nil {
+		t.Fatalf("usage deduplication index missing: %v", err)
 	}
 }
 
@@ -98,6 +102,31 @@ func TestRecordUsageIncrementsMonthlyAggregate(t *testing.T) {
 	}
 	if used != 7 {
 		t.Fatalf("used = %d", used)
+	}
+}
+
+func TestRecordUsageDeduplicatesRequestPerKey(t *testing.T) {
+	st := testStore(t)
+	now := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	first, _ := st.AddAPIKey("sk-first", "first", nil, KeyStatusActive, now)
+	second, _ := st.AddAPIKey("sk-second", "second", nil, KeyStatusActive, now)
+	for _, event := range []UsageEvent{
+		{RequestID: "req-shared", KeyHash: first.KeyHash, Timestamp: now, OutputTokens: 5},
+		{RequestID: "req-shared", KeyHash: first.KeyHash, Timestamp: now, OutputTokens: 5},
+		{RequestID: "req-shared", KeyHash: second.KeyHash, Timestamp: now, OutputTokens: 7},
+	} {
+		if err := st.RecordUsage(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstTotals, _ := st.PeriodTotals(first.KeyHash, "2026-07")
+	secondTotals, _ := st.PeriodTotals(second.KeyHash, "2026-07")
+	if firstTotals.Output != 5 || secondTotals.Output != 7 {
+		t.Fatalf("first=%+v second=%+v", firstTotals, secondTotals)
+	}
+	var events int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM usage_events WHERE request_id = ?`, "req-shared").Scan(&events); err != nil || events != 2 {
+		t.Fatalf("events=%d err=%v", events, err)
 	}
 }
 
@@ -285,6 +314,110 @@ func TestWeeklyPeriodUsage(t *testing.T) {
 	used, err := st.MonthlyUsage(key.KeyHash, period)
 	if err != nil || used != 5 {
 		t.Fatalf("weekly used = %d err=%v", used, err)
+	}
+}
+
+func TestResetKeyUsageRestoresQuotaAndKeepsEvents(t *testing.T) {
+	st := testStore(t)
+	now := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	limit := int64(10)
+	key, err := st.AddAPIKey("sk-reset", "reset", &limit, KeyStatusActive, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordUsage(UsageEvent{KeyHash: key.KeyHash, Timestamp: now, OutputTokens: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ResetKeyUsage(key.KeyHash, now); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	res, err := st.AuthenticateKey("sk-reset", now)
+	if err != nil || !res.Allowed {
+		t.Fatalf("auth after reset: %+v err=%v", res, err)
+	}
+	period, err := st.CurrentPeriod(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, err := st.MonthlyUsage(key.KeyHash, period)
+	if err != nil || used != 0 {
+		t.Fatalf("used after reset = %d err=%v", used, err)
+	}
+	var events int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM usage_events WHERE key_hash = ?`, key.KeyHash).Scan(&events); err != nil || events != 1 {
+		t.Fatalf("events = %d err=%v", events, err)
+	}
+}
+
+func TestUpstreamWeeklyResetAdvancesAllKeysAndPersists(t *testing.T) {
+	cfg := config.Default()
+	cfg.Quota.Period = config.QuotaPeriodWeekly
+	cfg.Usage.Timezone = "UTC"
+	cfg.Storage.SQLitePath = filepath.Join(t.TempDir(), "test.sqlite")
+	cfg.Secret.SecretFile = filepath.Join(t.TempDir(), "secret")
+	st, err := Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+
+	now := time.Date(2026, 7, 6, 12, 0, 0, 0, time.UTC)
+	firstLimit, secondLimit := int64(3), int64(4)
+	first, _ := st.AddAPIKey("sk-first", "first", &firstLimit, KeyStatusActive, now)
+	second, _ := st.AddAPIKey("sk-second", "second", &secondLimit, KeyStatusActive, now)
+	_ = st.RecordUsage(UsageEvent{KeyHash: first.KeyHash, Timestamp: now, OutputTokens: 3})
+	_ = st.RecordUsage(UsageEvent{KeyHash: second.KeyHash, Timestamp: now, OutputTokens: 4})
+	before, err := st.CurrentPeriod(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary := now.Add(time.Hour)
+	if err := st.ObserveUpstreamWeeklyReset(boundary, now); err != nil {
+		t.Fatal(err)
+	}
+	stillBefore, _ := st.CurrentPeriod(now.Add(30 * time.Minute))
+	if stillBefore != before {
+		t.Fatalf("first observation reset period: %q -> %q", before, stillBefore)
+	}
+
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := st.AuthenticateKey("sk-first", boundary)
+	if err != nil || !res.Allowed {
+		t.Fatalf("auth did not recover at upstream reset: %+v err=%v", res, err)
+	}
+	after, err := st.CurrentPeriod(boundary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after == before {
+		t.Fatalf("period did not advance: %q", after)
+	}
+	for _, key := range []APIKey{first, second} {
+		used, err := st.MonthlyUsage(key.KeyHash, after)
+		if err != nil || used != 0 {
+			t.Fatalf("new period usage for %s = %d err=%v", key.DisplayName, used, err)
+		}
+	}
+	again, err := st.CurrentPeriod(boundary.Add(time.Minute))
+	if err != nil || again != after {
+		t.Fatalf("period advanced twice: got=%q want=%q err=%v", again, after, err)
+	}
+	if err := st.RecordUsage(UsageEvent{KeyHash: first.KeyHash, Timestamp: boundary.Add(-time.Second), OutputTokens: 2}); err != nil {
+		t.Fatal(err)
+	}
+	newUsage, err := st.MonthlyUsage(first.KeyHash, after)
+	if err != nil || newUsage != 0 {
+		t.Fatalf("delayed old-cycle usage entered new period: %d err=%v", newUsage, err)
+	}
+	old, err := st.MonthlyUsage(first.KeyHash, before)
+	if err != nil || old != 5 {
+		t.Fatalf("old aggregate = %d err=%v", old, err)
 	}
 }
 

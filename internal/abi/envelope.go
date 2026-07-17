@@ -36,6 +36,8 @@ type Metadata = pluginapi.Metadata
 type Capabilities struct {
 	FrontendAuthProvider          bool `json:"frontend_auth_provider"`
 	FrontendAuthProviderExclusive bool `json:"frontend_auth_provider_exclusive"`
+	ResponseInterceptor           bool `json:"response_interceptor"`
+	StreamChunkInterceptor        bool `json:"response_stream_interceptor"`
 	Scheduler                     bool `json:"scheduler"`
 	UsagePlugin                   bool `json:"usage_plugin"`
 	ManagementAPI                 bool `json:"management_api"`
@@ -81,6 +83,8 @@ func PluginRegistration(version string) Registration {
 		Capabilities: Capabilities{
 			FrontendAuthProvider:          true,
 			FrontendAuthProviderExclusive: true,
+			ResponseInterceptor:           true,
+			StreamChunkInterceptor:        true,
 			Scheduler:                     true,
 			UsagePlugin:                   true,
 			ManagementAPI:                 true,

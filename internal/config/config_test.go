@@ -108,6 +108,12 @@ func TestCurrentPeriodWeeklyFormatAndBoundary(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsQueryAuthSources(t *testing.T) {
+	if _, err := Load([]byte("frontend_auth:\n  accepted_sources: [query_key]\n")); err == nil {
+		t.Fatal("expected query auth source to be rejected")
+	}
+}
+
 func TestLoadRejectsInvalidQuotaPeriod(t *testing.T) {
 	if _, err := Load([]byte("quota:\n  period: daily\n")); err == nil {
 		t.Fatalf("expected error for invalid quota.period")
